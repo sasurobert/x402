@@ -1,0 +1,26 @@
+{
+    "name": "@x402/multiversx",
+    "version": "0.1.0",
+    "main": "./dist/cjs/index.js",
+    "module": "./dist/esm/index.js",
+    "types": "./dist/cjs/index.d.ts",
+    "scripts": {
+        "build": "tsup",
+        "test": "vitest run",
+        "lint": "eslint . --ext .ts --fix"
+    },
+    "dependencies": {
+        "@multiversx/sdk-core": "^13.0.0",
+        "@multiversx/sdk-wallet": "^4.0.0",
+        "@x402/core": "workspace:^",
+        "zod": "^3.24.2"
+    },
+    "devDependencies": {
+        "tsup": "^8.4.0",
+        "typescript": "^5.7.3",
+        "vitest": "^3.0.5"
+    },
+    "files": [
+        "dist"
+    ]
+}

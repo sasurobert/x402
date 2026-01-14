@@ -1,7 +1,7 @@
 import base64
 import json
 import logging
-from typing import Any, Callable, Optional, get_args, cast
+from typing import Any, Callable, Optional, get_args, cast, Union
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, HTMLResponse
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 def require_payment(
     price: Price,
     pay_to_address: str,
-    path: str | list[str] = "*",
+    path: Union[str, list[str]] = "*",
     description: str = "",
     mime_type: str = "",
     max_deadline_seconds: int = 60,

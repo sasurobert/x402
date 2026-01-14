@@ -190,8 +190,14 @@ class SettleResponse(BaseModel):
     )
 
 
+class MultiversXPayload(BaseModel):
+    signature: str
+    
+    model_config = ConfigDict(extra="allow", alias_generator=to_camel, populate_by_name=True)
+
+
 # Union of payloads for each scheme
-SchemePayloads = ExactPaymentPayload
+SchemePayloads = Union[ExactPaymentPayload, MultiversXPayload]
 
 
 class PaymentPayload(BaseModel):

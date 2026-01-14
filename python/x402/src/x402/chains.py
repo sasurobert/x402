@@ -3,6 +3,9 @@ NETWORK_TO_ID = {
     "base": "8453",
     "avalanche-fuji": "43113",
     "avalanche": "43114",
+    "mvx:1": "1",
+    "mvx:D": "D",
+    "mvx:T": "T",
 }
 
 

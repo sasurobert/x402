@@ -20,8 +20,9 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
         // The 'payTo' is the SC Address.
         // The 'extra' field contains resourceId.
 
-        if (!paymentRequirements.extra?.resourceId) {
-            throw new Error("resourceId is required in payment requirements extra field");
+        const resourceId = paymentRequirements.extra?.resourceId;
+        if (typeof resourceId !== "string" || !resourceId) {
+            throw new Error("resourceId is required and must be a string in payment requirements extra field");
         }
 
         const authorization: ExactMultiversXAuthorization = {
@@ -29,7 +30,7 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
             to: paymentRequirements.payTo,
             value: paymentRequirements.amount,
             tokenIdentifier: paymentRequirements.asset, // asset field used as TokenID
-            resourceId: paymentRequirements.extra.resourceId,
+            resourceId: resourceId,
             validAfter: (now - 600).toString(),
             validBefore: (now + paymentRequirements.maxTimeoutSeconds).toString(),
             // Nonce is typically fetched by the signer or passed in. 

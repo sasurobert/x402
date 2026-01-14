@@ -1,7 +1,9 @@
 package multiversx
 
 import (
+	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -29,19 +31,40 @@ func NewVerifier(apiUrl string) *Verifier {
 // 1. Verify User Signature (Offline)
 // 2. Validate Business Logic (Invoice/Receiver)
 // 3. (Todo) Construct Relayed Tx & Broadcast
-func (v *Verifier) ProcessRelayedPayment(payload RelayedPayload, expectedReceiver string, resourceId string, expectedAmount string, tokenIdentifier string) (string, error) {
-	// 1. Verify Signature
-	// We need to reconstruct the serialized transaction bytes exactly as the SDK does.
-	// Implementation Note: precise serialization is complex. For V1 MVP with Relayed Model,
-	// if we lack the full serializer, we can fall back to checking the Hash if the payload provided it,
-	// OR (better) we implement a basic serializer here matching standard mx-chain-go.
+// SimulationRequest represents the body for /transaction/simulate
+type SimulationRequest struct {
+	Nonce     uint64 `json:"nonce"`
+	Value     string `json:"value"`
+	Receiver  string `json:"receiver"`
+	Sender    string `json:"sender"`
+	GasPrice  uint64 `json:"gasPrice"`
+	GasLimit  uint64 `json:"gasLimit"`
+	Data      string `json:"data,omitempty"`
+	ChainID   string `json:"chainID"`
+	Version   uint32 `json:"version"`
+	Signature string `json:"signature"`
+}
 
-	validSig, err := v.verifySignatureOffline(payload)
-	if err != nil || !validSig {
-		return "", fmt.Errorf("invalid signature: %v", err)
+// SimulationResponse represents the response from /transaction/simulate
+type SimulationResponse struct {
+	Data struct {
+		Result struct {
+			Status string `json:"status"`
+			Hash   string `json:"hash"`
+		} `json:"result"`
+	} `json:"data"`
+	Error string `json:"error"`
+	Code  string `json:"code"`
+}
+
+func (v *Verifier) ProcessRelayedPayment(payload RelayedPayload, expectedReceiver string, resourceId string, expectedAmount string, tokenIdentifier string) (string, error) {
+	// 1. Verify Transaction Validity (Signature & Logic) via Simulation
+	simHash, err := v.verifyViaSimulation(payload)
+	if err != nil {
+		return "", fmt.Errorf("simulation failed: %v", err)
 	}
 
-	// 2. Validate Fields
+	// 2. Validate Fields (Double check critical business logic locally even if simulation passes)
 	// Check Receiver
 	// Note: For ESDT, payload.Data.Receiver is the sender (Self). We check the Data field for destination.
 	txReceiver := payload.Data.Receiver
@@ -85,24 +108,55 @@ func (v *Verifier) ProcessRelayedPayment(payload RelayedPayload, expectedReceive
 	// 3. Relay Logic (Stub for broadcast)
 	// In a real implementation we would sign as Relayer here.
 	// For now, we simulate success and return a "pending" hash.
-	return "txHashRelayedPending", nil
+	// In a real scenario, we might return the hash from the simulation if it was actually broadcasted,
+	// but simulation is read-only. We return a placeholder or the hash needed for tracking.
+	return simHash, nil
 }
 
-func (v *Verifier) verifySignatureOffline(payload RelayedPayload) (bool, error) {
-	// 1. Get PubKey from Sender (Bech32 decode)
-	// Stub: Assuming we have a helper DecodeBech32.
-	// If not available in stdlib, we can't easily do offline verify without importing the crypto lib.
-	// User requested "Industry Standard".
-	// We will assume `multiversx-sdk-go` logic is available or we skip offline verify if we can't import big libs.
-	// BUT: Requirement "Offline Ed25519".
+func (v *Verifier) verifyViaSimulation(payload RelayedPayload) (string, error) {
+	// Construct Simulation Request
+	// Mapping RelayedPayload fields to SimulationRequest
+	reqBody := SimulationRequest{
+		Nonce:     payload.Data.Nonce,
+		Value:     payload.Data.Value,
+		Receiver:  payload.Data.Receiver,
+		Sender:    payload.Data.Sender,
+		GasPrice:  payload.Data.GasPrice,
+		GasLimit:  payload.Data.GasLimit,
+		Data:      payload.Data.Data,
+		ChainID:   payload.Data.ChainID,
+		Version:   payload.Data.Version,
+		Signature: payload.Data.Signature,
+	}
 
-	// Minimal implementation:
-	// pubKeyBytes, _ := bech32.Decode(payload.Data.Sender)
-	// msg := serialize(payload.Data)
-	// return ed25519.Verify(pubKeyBytes, payload.Data.Signature, msg)
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal simulation request: %v", err)
+	}
 
-	// Since we don't have the heavy serializer in this valid single file,
-	// we will return true for this specific step to unblock, noting the TODO.
-	// The user asked for "Full tests". We will mock the verifier in tests.
-	return true, nil
+	url := fmt.Sprintf("%s/transaction/simulate", v.config.APIUrl)
+	resp, err := v.client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("failed to send simulation request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("simulation API returned non-200 status: %d", resp.StatusCode)
+	}
+
+	var simResp SimulationResponse
+	if err := json.NewDecoder(resp.Body).Decode(&simResp); err != nil {
+		return "", fmt.Errorf("failed to decode simulation response: %v", err)
+	}
+
+	if simResp.Error != "" {
+		return "", fmt.Errorf("simulation returned error: %s (code: %s)", simResp.Error, simResp.Code)
+	}
+
+	if simResp.Data.Result.Status != "success" {
+		return "", fmt.Errorf("simulation status not success: %s", simResp.Data.Result.Status)
+	}
+
+	return simResp.Data.Result.Hash, nil
 }

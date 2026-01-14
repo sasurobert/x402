@@ -4,9 +4,24 @@ import { MultiversXSigner } from "../src/signer";
 import { PaymentRequirements } from "@x402/core/types";
 
 // Mock Signer
+import { Transaction, Address } from "@multiversx/sdk-core";
+
+const alice = new Address(Buffer.alloc(32, 1)).bech32();
+const bob = new Address(Buffer.alloc(32, 2)).bech32();
+
+const mockTransaction = new Transaction({
+    nonce: 7,
+    value: "1000",
+    receiver: new Address(bob),
+    sender: new Address(alice),
+    gasLimit: 60000,
+    chainID: "1"
+});
+mockTransaction.applySignature(Buffer.from("mock_sig_hex", "hex")); // Ensure it has a signature
+
 const mockSigner = {
-    address: "erd1sender",
-    signTransaction: vi.fn(async () => "txHash123"),
+    address: alice,
+    signTransaction: vi.fn(async () => mockTransaction),
 } as unknown as MultiversXSigner;
 
 describe("ExactMultiversXScheme", () => {
@@ -14,7 +29,7 @@ describe("ExactMultiversXScheme", () => {
 
     it("should create a valid payment payload", async () => {
         const req: PaymentRequirements = {
-            payTo: "erd1sc",
+            payTo: bob,
             amount: "1000",
             asset: "EGLD",
             network: "multiversx:1",
@@ -27,9 +42,13 @@ describe("ExactMultiversXScheme", () => {
         const result = await scheme.createPaymentPayload(1, req);
 
         expect(result.x402Version).toBe(1);
-        expect(result.payload.signature).toBe("txHash123");
+        // Relayed Payload checks
+        expect(result.payload.signature).toBe(mockTransaction.getSignature().toString('hex'));
+        expect(result.payload.nonce).toBe(7);
+        expect(result.payload.value).toBe("1000");
+        expect(result.payload.sender.toString()).toBe(alice);
+        // Authorization context check
         expect(result.payload.authorization.resourceId).toBe("res-1");
-        expect(result.payload.authorization.to).toBe("erd1sc");
 
         // Check auto-calculated fields
         const now = Math.floor(Date.now() / 1000);
@@ -38,7 +57,7 @@ describe("ExactMultiversXScheme", () => {
 
     it("should throw if resourceId is missing", async () => {
         const req: PaymentRequirements = {
-            payTo: "erd1sc",
+            payTo: bob,
             amount: "1000",
             asset: "EGLD",
             network: "multiversx:1",

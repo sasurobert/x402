@@ -40,12 +40,25 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
 
         const chainId = paymentRequirements.network.split(":")[1] || "1";
 
-        // Sign the transaction -> Returns TxHash
-        const signature = await this.signer.signTransaction(authorization, chainId);
+        // Sign the transaction -> Returns Signed Transaction Object
+        const signedTx = await this.signer.signTransaction(authorization, chainId);
+
+        // Construct the Relayed Payload
+        const txObj = signedTx.toPlainObject();
 
         const payload: ExactMultiversXPayload = {
-            authorization,
-            signature,
+            nonce: txObj.nonce,
+            value: txObj.value,
+            receiver: txObj.receiver,
+            sender: txObj.sender,
+            gasPrice: txObj.gasPrice,
+            gasLimit: txObj.gasLimit,
+            data: txObj.data, // Base64 or string? toPlainObject usually returns encoded data.
+            chainID: txObj.chainID,
+            version: txObj.version,
+            options: txObj.options,
+            signature: signedTx.getSignature().toString('hex'),
+            authorization // Optional context
         };
 
         return {

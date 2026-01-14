@@ -2,6 +2,24 @@ package multiversx
 
 import "math/big"
 
+// RelayedPayload matches the JSON sent by the Client
+type RelayedPayload struct {
+	Scheme string `json:"scheme"`
+	Data   struct {
+		Nonce     uint64 `json:"nonce"`
+		Value     string `json:"value"`
+		Receiver  string `json:"receiver"`
+		Sender    string `json:"sender"`
+		GasPrice  uint64 `json:"gasPrice"`
+		GasLimit  uint64 `json:"gasLimit"`
+		Data      string `json:"data"`
+		ChainID   string `json:"chainID"`
+		Version   uint32 `json:"version"`
+		Options   uint32 `json:"options"`
+		Signature string `json:"signature"` // Hex encoded
+	} `json:"data"`
+}
+
 // PaymentDetails represents the decoded x402 payment token (TxHash)
 type PaymentDetails struct {
 	TxHash string
@@ -9,13 +27,14 @@ type PaymentDetails struct {
 
 // TransactionAPIResponse models the MultiversX API response
 type TransactionAPIResponse struct {
-	Hash     string `json:"hash"`
-	Sender   string `json:"sender"`
-	Receiver string `json:"receiver"`
-	Value    string `json:"value"` // Atomic units
-	Status   string `json:"status"`
-	Data     string `json:"data"` // "pay@..."
-	Action   struct {
+	Hash      string `json:"hash"`
+	Sender    string `json:"sender"`
+	Receiver  string `json:"receiver"`
+	Value     string `json:"value"` // Atomic units
+	Status    string `json:"status"`
+	Timestamp int64  `json:"timestamp"`
+	Data      string `json:"data"` // "pay@..."
+	Action    struct {
 		Arguments struct {
 			Transfers []struct {
 				Token      string `json:"token"`

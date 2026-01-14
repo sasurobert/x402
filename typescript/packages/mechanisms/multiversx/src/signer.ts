@@ -23,8 +23,9 @@ export class MultiversXSigner {
     /**
      * Signs a x402 payment authorization (Transaction).
      * Handles both EGLD (Direct) and ESDT (Transfer & Execute) payments.
+     * Returns the full Signed Transaction object (not just hash) for Relaying.
      */
-    async signTransaction(auth: ExactMultiversXAuthorization, chainId: string): Promise<string> {
+    async signTransaction(auth: ExactMultiversXAuthorization, chainId: string): Promise<Transaction> {
         let transaction: Transaction;
 
         // 1. Prepare Function Call: pay@<resource_id_hex>
@@ -77,7 +78,7 @@ export class MultiversXSigner {
         // 2. Sign
         const signedTx = await this.provider.signTransaction(transaction);
 
-        // 3. Return Hash
-        return signedTx.getHash().toString();
+        // 3. Return Signed Transaction Object
+        return signedTx;
     }
 }

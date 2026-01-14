@@ -31,12 +31,15 @@ describe("MultiversXSigner", () => {
             nonce: 5
         };
 
-        const hash = await signer.signTransaction(auth, "1");
+        const signedTx = await signer.signTransaction(auth, "1");
 
         expect(mockProvider.signTransaction).toHaveBeenCalled();
 
         // Get the transaction object passed to the mock
         const tx = (mockProvider.signTransaction as any).mock.calls[0][0] as Transaction;
+
+        // Assert the result is the transaction object
+        expect(signedTx).toBe(tx);
 
         expect(tx.getReceiver().bech32()).toBe(bob);
         expect(tx.getValue().toString()).toBe("1000000000000000000");

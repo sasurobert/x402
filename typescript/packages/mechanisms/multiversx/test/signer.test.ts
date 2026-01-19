@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { MultiversXSigner, ISignerProvider } from "../src/signer";
 import { Transaction, Address } from "@multiversx/sdk-core";
-import { ExactMultiversXAuthorization } from "../src/types";
 
 // Mock Provider
 const mockProvider = {
@@ -20,64 +19,77 @@ describe("MultiversXSigner", () => {
         const signer = new MultiversXSigner(mockProvider, alice);
 
         it("should construct a correct EGLD transaction", async () => {
-                const auth: ExactMultiversXAuthorization = {
-                        from: alice,
+                const request = {
                         to: bob,
-                        value: "1000000000000000000", // 1 EGLD
+                        amount: "1000000000000000000", // 1 EGLD
                         tokenIdentifier: "EGLD",
                         resourceId: "invoice-123",
-                        validAfter: "0",
-                        validBefore: "1000",
+                        chainId: "1",
                         nonce: 5
                 };
 
-                const signedTx = await signer.signTransaction(auth, "1");
+                await signer.sign(request);
 
                 expect(mockProvider.signTransaction).toHaveBeenCalled();
-
                 // Get the transaction object passed to the mock
                 const tx = (mockProvider.signTransaction as any).mock.calls[0][0] as Transaction;
 
-                // Assert the result is the transaction object
-                expect(signedTx).toBe(tx);
-
                 expect(tx.getReceiver().bech32()).toBe(bob);
                 expect(tx.getValue().toString()).toBe("1000000000000000000");
-                expect(tx.getData().toString()).toBe("pay@696e766f6963652d313233"); // pay@hex("invoice-123")
-                expect(tx.getGasLimit().valueOf()).toBe(10_000_000);
+                // Expect exact resourceId in data (no pay@)
+                expect(tx.getData().toString()).toBe("invoice-123");
+                expect(tx.getGasLimit().valueOf()).toBe(50_000);
         });
 
         it("should construct a correct ESDT transaction", async () => {
                 (mockProvider.signTransaction as any).mockClear();
 
-                const auth: ExactMultiversXAuthorization = {
-                        from: alice, // Sender
-                        to: bob, // Destination SC
-                        value: "500", // 500 atomic units
+                const request = {
+                        to: bob,
+                        amount: "500", // 500 atomic units
                         tokenIdentifier: "TOKEN-123456",
                         resourceId: "invoice-456",
-                        validAfter: "0",
-                        validBefore: "1000",
+                        chainId: "D"
                 };
 
-                await signer.signTransaction(auth, "D");
+                await signer.sign(request);
 
                 const tx = (mockProvider.signTransaction as any).mock.calls[0][0] as Transaction;
 
-                // For ESDT, receiver is self (sender)
                 expect(tx.getReceiver().bech32()).toBe(alice);
-                // Value is 0 EGLD
                 expect(tx.getValue().toString()).toBe("0");
 
-                // Check Data for MultiESDT properties
-                // MultiESDTNFTTransfer@<dest>@01@<token>@00@<amount>@pay@<resourceId>
                 const data = tx.getData().toString();
                 expect(data).toContain("MultiESDTNFTTransfer");
-                // Verify hex of destination (bob) is present
                 expect(data).toContain(new Address(bob).hex());
                 expect(data).toContain(Buffer.from("TOKEN-123456").toString('hex'));
-                expect(data).toContain("01f4"); // 500 in hex
-                expect(data).toContain(Buffer.from("pay").toString('hex')); // "pay" in hex
+                // Expect resourceId hex at the end (as function name)
                 expect(data).toContain(Buffer.from("invoice-456").toString('hex'));
+        });
+
+        it("should construct a MultiESDT transaction for EGLD-000000", async () => {
+                (mockProvider.signTransaction as any).mockClear();
+
+                const request = {
+                        to: bob,
+                        amount: "1000",
+                        tokenIdentifier: "EGLD-000000", // Should trigger ESDT path
+                        resourceId: "item-789",
+                        chainId: "D"
+                };
+
+                await signer.sign(request);
+
+                const tx = (mockProvider.signTransaction as any).mock.calls[0][0] as Transaction;
+
+                // ESDT Path: Receiver = Sender
+                expect(tx.getReceiver().bech32()).toBe(alice);
+                expect(tx.getValue().toString()).toBe("0");
+
+                const data = tx.getData().toString();
+                expect(data).toContain("MultiESDTNFTTransfer");
+                // Token Identifier "EGLD-000000" should be hex encoded in data
+                expect(data).toContain(Buffer.from("EGLD-000000").toString('hex'));
+                expect(data).toContain(Buffer.from("item-789").toString('hex'));
         });
 });

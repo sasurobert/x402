@@ -44,16 +44,13 @@ func (s *ExactMultiversXScheme) ParsePrice(price x402.Price, network x402.Networ
 	amount, _ := priceMap["amount"].(string)
 	asset, _ := priceMap["asset"].(string)
 
+	// Default to EGLD if no asset
 	if asset == "" {
 		asset = "EGLD"
 	}
 
-	// Simple decimal logic for demo
-	// In real world, fetch from config/chain
-	// We don't set decimals in AssetAmount because x402 AssetAmount struct doesn't HAVE Decimals field!
-	// x402.AssetAmount definition: Asset string, Amount string, Extra map.
-	// So we just return it.
-
+	// We return the AssetAmount with simple string values.
+	// Decimals are implicitly handled by the backend/chain logic or not part of this struct.
 	return x402.AssetAmount{
 		Asset:  asset,
 		Amount: amount,

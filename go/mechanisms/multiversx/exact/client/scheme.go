@@ -6,7 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
-	"strings"
+	"time"
+
+	"github.com/multiversx/mx-sdk-go/blockchain"
+	"github.com/multiversx/mx-sdk-go/core"
+	"github.com/multiversx/mx-sdk-go/data"
 
 	"github.com/coinbase/x402/go/mechanisms/multiversx"
 
@@ -35,31 +39,68 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 		return types.PaymentPayload{}, fmt.Errorf("PayTo is required")
 	}
 
-	// 2. Prepare Transaction Data
-	// In a real SDK we would fetch Nonce/Gas from network.
-	// Here we assume defaults or they must be provided in Extra (or we query if we had an RPC client).
-	// EVM implementation queries chain. SVM queries chain.
-	// We should probably allow an RPC client injection similar to EVM/SVM.
-	// For now, we'll use defaults or mock values, but standard enforces we should try to be real.
-	// Let's rely on hardcoded Gas/Nonce for V1, or basic defaults.
+	// STRICT VERIFICATION: PayTo must be a valid Bech32 address
+	if _, _, err := multiversx.DecodeBech32(requirements.PayTo); err != nil {
+		return types.PaymentPayload{}, fmt.Errorf("invalid PayTo address (must be valid Bech32): %w", err)
+	}
 
-	// Default Gas
+	// 2. Prepare Transaction Data
+	// Default Gas settings for V1 - can be optimized or made dynamic later
 	gasLimit := uint64(50000)
 	gasPrice := uint64(1000000000)
 
 	version := uint32(1)
-	chainID := "D" // Default Devnet
+	chainID := "1" // Default to Mainnet "1" if not specified
+	apiURL := "https://api.multiversx.com"
+
 	if requirements.Network != "" {
-		// "multiversx:D" -> "D"
 		_, ref, err := x402.Network(requirements.Network).Parse()
 		if err == nil {
 			chainID = ref
+			if chainID == "D" {
+				apiURL = "https://devnet-api.multiversx.com"
+			} else if chainID == "T" {
+				apiURL = "https://testnet-api.multiversx.com"
+			}
 		}
 	}
 
 	sender := s.signer.Address()
 	receiver := requirements.PayTo
 	value := requirements.Amount // Already big int string
+
+	// FETCH NONCE from Network
+	args := blockchain.ArgsProxy{
+		ProxyURL:            apiURL,
+		Client:              nil, // Use default http client
+		SameScState:         false,
+		ShouldBeSynced:      false,
+		FinalityCheck:       false,
+		EntityType:          core.Proxy,
+		CacheExpirationTime: time.Minute,
+	}
+	proxy, err := blockchain.NewProxy(args)
+	if err != nil {
+		// If proxy creation fails, we fallback to 0 or error?
+		// Verification requires correct nonce. Error is safer.
+		return types.PaymentPayload{}, fmt.Errorf("failed to create proxy: %w", err)
+	}
+
+	// Create address object
+	address, err := data.NewAddressFromBech32String(sender)
+	if err != nil {
+		return types.PaymentPayload{}, fmt.Errorf("invalid sender address: %w", err)
+	}
+
+	// Fetch account
+	account, err := proxy.GetAccount(ctx, address)
+	var nonce uint64
+	if err != nil {
+		// Log warning but maybe allow fallback if network is down?
+		// No, for "Exact", if we sign wrong nonce, it fails.
+		return types.PaymentPayload{}, fmt.Errorf("failed to fetch account state: %w", err)
+	}
+	nonce = account.Nonce
 
 	// ESDT Logic
 	dataString := ""
@@ -68,37 +109,26 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 
 	if asset != "" && asset != "EGLD" {
 		// ESDT Transfer (MultiESDTNFTTransfer)
-		// Receiver becomes Sender (Self Transfer)
 		receiver = sender
 		value = "0"
-		gasLimit = 60000000 // Higher gas
+		gasLimit = 60000000 // Higher gas for SC call
 
 		// Encode Data: MultiESDTNFTTransfer@<DestHex>@01@<TokenHex>@00@<AmountHex>
-		// We need to convert PayTo (dest) to hex.
-		var destHex string
-		if strings.HasPrefix(requirements.PayTo, "erd1") {
-			_, decodedBytes, err := multiversx.DecodeBech32(requirements.PayTo)
-			if err == nil {
-				destHex = hex.EncodeToString(decodedBytes)
-			} else {
-				destHex = hex.EncodeToString([]byte(requirements.PayTo))
-			}
-		} else {
-			destHex = hex.EncodeToString([]byte(requirements.PayTo))
-		}
+		// PayTo is already validated as Bech32 above.
+		_, decodedBytes, _ := multiversx.DecodeBech32(requirements.PayTo)
+		destHex := hex.EncodeToString(decodedBytes)
 
 		tokenHex := hex.EncodeToString([]byte(requirements.Asset))
 
-		amtBig, _ := new(big.Int).SetString(requirements.Amount, 10)
-		if amtBig == nil {
-			return types.PaymentPayload{}, fmt.Errorf("invalid amount")
+		amtBig, ok := new(big.Int).SetString(requirements.Amount, 10)
+		if !ok {
+			return types.PaymentPayload{}, fmt.Errorf("invalid amount: %s", requirements.Amount)
 		}
 		amtHex := amtBig.Text(16)
 		if len(amtHex)%2 != 0 {
 			amtHex = "0" + amtHex
 		}
 
-		// MultiESDTNFTTransfer format
 		// MultiESDTNFTTransfer format
 		// MultiESDTNFTTransfer@<DestHex>@01@<TokenHex>@00@<AmountHex>@<ResourceID>
 
@@ -116,11 +146,21 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 
 	} else {
 		// EGLD
-		// Data might be empty for simple transfer
-		dataString = ""
+		// If resourceId is present, put it in data?
+		// Replicating TS logic:
+		if rid, ok := requirements.Extra["resourceId"].(string); ok && rid != "" {
+			dataString = rid
+		} else {
+			dataString = ""
+		}
 	}
 
 	// 3. Construct Payload Object
+	now := time.Now().Unix()
+	validAfter := now - 600 // 10 minutes ago
+	validBefore := now + int64(requirements.MaxTimeoutSeconds)
+
+	// Note: We sign the standard transaction fields. ValidAfter/Before are x402 metadata.
 	txData := struct {
 		Nonce    uint64 `json:"nonce"`
 		Value    string `json:"value"`
@@ -132,7 +172,7 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 		ChainID  string `json:"chainID"`
 		Version  uint32 `json:"version"`
 	}{
-		Nonce:    15, // TODO: Must fetch nonce in real impl
+		Nonce:    nonce,
 		Value:    value,
 		Receiver: receiver,
 		Sender:   sender,
@@ -170,6 +210,8 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 	exactPayload.Data.ChainID = txData.ChainID
 	exactPayload.Data.Version = txData.Version
 	exactPayload.Data.Signature = hex.EncodeToString(sigBytes)
+	exactPayload.Data.ValidAfter = validAfter
+	exactPayload.Data.ValidBefore = validBefore
 
 	// Return Map
 	payloadBytes, _ := json.Marshal(exactPayload)

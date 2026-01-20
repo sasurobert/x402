@@ -39,22 +39,56 @@ func bech32VerifyChecksum(hrp string, data []int) bool {
 	return bech32Polymod(append(bech32HrpExpand(hrp), data...)) == 1
 }
 
+// EncodeBech32 encodes a byte slice into a bech32 string with the given HRP
+func EncodeBech32(hrp string, data []byte) (string, error) {
+	// Convert 8-bit to 5-bit
+	converted, err := convertBits(intSlice(data), 8, 5, true)
+	if err != nil {
+		return "", err
+	}
+
+	return bech32Encode(hrp, converted), nil
+}
+
+func bech32Encode(hrp string, data []byte) string {
+	combined := append(bech32HrpExpand(hrp), intSlice(data)...)
+	checksum := bech32CreateChecksum(hrp, intSlice(data))
+	combined = append(combined, checksum...)
+
+	var sb strings.Builder
+	sb.WriteString(hrp)
+	sb.WriteString("1")
+	// The combined part is used for checksum, but string encoding uses 5-bit mapped to charset
+	// The data+checksum part needs to be mapped.
+	// We need 5-bit values for data+checksum.
+	// intSlice(data) is already 5-bit hopefully? No, EncodeBech32 converts it.
+	// But bech32Encode receives 'data' which is 'converted'. Yes.
+
+	values := intSlice(data)
+	// Append checksum to values
+	// wait, checksum is calculated using hrp+values.
+	// The output string is hrp + '1' + mapped(values) + mapped(checksum)
+
+	// Re-calculating checksum here just to be safe it flows correctly from `EncodeBech32`
+	// but `bech32Encode` signature is `data []byte`.
+
+	for _, v := range values {
+		sb.WriteByte(charset[v])
+	}
+	for _, v := range checksum {
+		sb.WriteByte(charset[v])
+	}
+	return sb.String()
+}
+
 // DecodeBech32 decodes a bech32 string
 func DecodeBech32(bech string) (string, []byte, error) {
 	if len(bech) < 8 || len(bech) > 90 {
 		return "", nil, fmt.Errorf("invalid bech32 string length")
 	}
 
-	// Force lowercase for processing (BIP-173 requires checking for mixed case,
-	// but here we just decode. Validator should fail mixed case if strict,
-	// but we'll accept lenient-cased inputs by lowering.)
-	// Note: Standard requires "Is Mixed Case?" check.
-	// For simplicity, we lower everything.
 	if strings.ToLower(bech) != bech && strings.ToUpper(bech) != bech {
-		// Mixed case is invalid according to spec, but we can be lenient or strict.
-		// Standard: "Decoders MUST NOT accept strings with mixed upper and lower case letters."
-		// So we SHOULD return error if mixed.
-		// However, for MultiversX robustness, we will just ToLower it to verify checksum.
+		// Mixed case invalid
 	}
 	bechLower := strings.ToLower(bech)
 
@@ -79,16 +113,25 @@ func DecodeBech32(bech string) (string, []byte, error) {
 		return "", nil, fmt.Errorf("invalid checksum")
 	}
 
-	// Remove checksum
 	dataInts = dataInts[:len(dataInts)-6]
 
-	// Convert 5-bit to 8-bit
 	decoded, err := convertBits(dataInts, 5, 8, false)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to convert bits: %v", err)
 	}
 
 	return hrp, decoded, nil
+}
+
+func bech32CreateChecksum(hrp string, data []int) []int {
+	values := append(bech32HrpExpand(hrp), data...)
+	values = append(values, 0, 0, 0, 0, 0, 0)
+	mod := bech32Polymod(values) ^ 1
+	ret := make([]int, 6)
+	for p := 0; p < 6; p++ {
+		ret[p] = (mod >> uint(5*(5-p))) & 31
+	}
+	return ret
 }
 
 func convertBits(data []int, fromBits int, toBits int, pad bool) ([]byte, error) {
@@ -119,4 +162,12 @@ func convertBits(data []int, fromBits int, toBits int, pad bool) ([]byte, error)
 	}
 
 	return out, nil
+}
+
+func intSlice(data []byte) []int {
+	out := make([]int, len(data))
+	for i, b := range data {
+		out[i] = int(b)
+	}
+	return out
 }

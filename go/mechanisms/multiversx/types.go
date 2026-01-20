@@ -15,17 +15,19 @@ type NetworkConfig struct {
 type ExactRelayedPayload struct {
 	Scheme string `json:"scheme"`
 	Data   struct {
-		Nonce     uint64 `json:"nonce"`
-		Value     string `json:"value"`
-		Receiver  string `json:"receiver"`
-		Sender    string `json:"sender"`
-		GasPrice  uint64 `json:"gasPrice"`
-		GasLimit  uint64 `json:"gasLimit"`
-		Data      string `json:"data"`
-		ChainID   string `json:"chainID"`
-		Version   uint32 `json:"version"`
-		Options   uint32 `json:"options"`
-		Signature string `json:"signature"` // Hex encoded
+		Nonce       uint64 `json:"nonce"`
+		Value       string `json:"value"`
+		Receiver    string `json:"receiver"`
+		Sender      string `json:"sender"`
+		GasPrice    uint64 `json:"gasPrice"`
+		GasLimit    uint64 `json:"gasLimit"`
+		Data        string `json:"data"`
+		ChainID     string `json:"chainID"`
+		Version     uint32 `json:"version"`
+		Options     uint32 `json:"options"`
+		Signature   string `json:"signature"`   // Hex encoded
+		ValidAfter  int64  `json:"validAfter"`  // Timestamp (seconds)
+		ValidBefore int64  `json:"validBefore"` // Timestamp (seconds)
 	} `json:"data"`
 }
 

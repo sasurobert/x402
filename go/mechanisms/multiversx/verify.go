@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	x402 "github.com/coinbase/x402/go"
 	"github.com/coinbase/x402/go/types"
 )
 
@@ -30,12 +31,12 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 	if payload.Data.Receiver != requirements.PayTo {
 		// Just a warning or strict check?
 		// EVM checks strictness usually.
-		return false, fmt.Errorf("receiver mismatch: got %s, want %s", payload.Data.Receiver, requirements.PayTo)
+		return false, x402.NewVerifyError("receiver_mismatch", payload.Data.Sender, "multiversx", fmt.Errorf("got %s, want %s", payload.Data.Receiver, requirements.PayTo))
 	}
 
 	// 2. Signature Presence
 	if payload.Data.Signature == "" {
-		return false, fmt.Errorf("missing signature")
+		return false, x402.NewVerifyError(x402.ErrCodeSignatureInvalid, payload.Data.Sender, "multiversx", fmt.Errorf("missing signature"))
 	}
 
 	// 3. Local Ed25519 Verification
@@ -74,7 +75,7 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 	if err != nil {
 		// If serialization fails, maybe fallback to sim?
 		// But basic serialization shouldn't fail.
-		return false, fmt.Errorf("serialization failed: %w", err)
+		return false, x402.NewVerifyError("serialization_failed", payload.Data.Sender, "multiversx", err)
 	}
 
 	// B. Verify Signature
@@ -83,20 +84,20 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 	_, pubKeyBytes, err := DecodeBech32(payload.Data.Sender)
 	if err != nil {
 		// Invalid sender address format
-		return false, fmt.Errorf("invalid sender address: %w", err)
+		return false, x402.NewVerifyError("invalid_sender_address", payload.Data.Sender, "multiversx", err)
 	}
 
 	sigBytes, err := hex.DecodeString(payload.Data.Signature)
 	if err != nil {
-		return false, fmt.Errorf("invalid signature hex: %w", err)
+		return false, x402.NewVerifyError("invalid_signature_hex", payload.Data.Sender, "multiversx", err)
 	}
 
 	if len(sigBytes) != 64 {
-		return false, fmt.Errorf("invalid signature length: %d", len(sigBytes))
+		return false, x402.NewVerifyError("invalid_signature_length", payload.Data.Sender, "multiversx", fmt.Errorf("expected 64 bytes, got %d", len(sigBytes)))
 	}
 
 	if len(pubKeyBytes) != 32 {
-		return false, fmt.Errorf("invalid public key length: %d", len(pubKeyBytes))
+		return false, x402.NewVerifyError("invalid_public_key_length", payload.Data.Sender, "multiversx", fmt.Errorf("expected 32 bytes, got %d", len(pubKeyBytes)))
 	}
 
 	if ed25519.Verify(pubKeyBytes, msgBytes, sigBytes) {
@@ -111,11 +112,11 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 
 	hash, err := simulator(payload)
 	if err != nil {
-		return false, fmt.Errorf("simulation failed: %w", err)
+		return false, x402.NewVerifyError("simulation_failed", payload.Data.Sender, "multiversx", err)
 	}
 
 	if hash == "" {
-		return false, fmt.Errorf("simulation returned empty hash")
+		return false, x402.NewVerifyError("simulation_returned_empty_hash", payload.Data.Sender, "multiversx", nil)
 	}
 
 	return true, nil

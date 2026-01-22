@@ -159,16 +159,16 @@ func (s *ExactMultiversXScheme) EnhancePaymentRequirements(
 func (s *ExactMultiversXScheme) ValidatePaymentRequirements(requirements x402.PaymentRequirements) error {
 	// 1. Check PayTo Address
 	if !multiversx.IsValidAddress(requirements.PayTo) {
-		return fmt.Errorf("invalid PayTo address: %s", requirements.PayTo)
+		return x402.NewPaymentError(x402.ErrCodeInvalidPayment, fmt.Sprintf("invalid PayTo address: %s", requirements.PayTo), nil)
 	}
 
 	// 2. Check Amount
 	if requirements.Amount == "" {
-		return fmt.Errorf("amount is required")
+		return x402.NewPaymentError(x402.ErrCodeInvalidPayment, "amount is required", nil)
 	}
 	// Check if amount is a valid number (big int string)
 	if _, err := multiversx.CheckAmount(requirements.Amount); err != nil {
-		return err
+		return x402.NewPaymentError(x402.ErrCodeInvalidPayment, err.Error(), nil)
 	}
 
 	// 3. Check Asset (TokenID)
@@ -176,7 +176,7 @@ func (s *ExactMultiversXScheme) ValidatePaymentRequirements(requirements x402.Pa
 	// If it's something else, must match TokenID format
 	if requirements.Asset != "" && requirements.Asset != "EGLD" {
 		if !multiversx.IsValidTokenID(requirements.Asset) {
-			return fmt.Errorf("invalid asset TokenID: %s", requirements.Asset)
+			return x402.NewPaymentError(x402.ErrCodeInvalidPayment, fmt.Sprintf("invalid asset TokenID: %s", requirements.Asset), nil)
 		}
 	}
 

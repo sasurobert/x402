@@ -59,7 +59,7 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 	}
 
 	if err := json.Unmarshal(payloadBytes, &relayedPayload); err != nil {
-		return nil, fmt.Errorf("invalid payload format: %v", err)
+		return nil, x402.NewVerifyError(x402.ErrCodeInvalidPayment, "", "multiversx", fmt.Errorf("invalid payload format: %v", err))
 	}
 
 	// 2. Perform Verification using Universal logic
@@ -68,7 +68,7 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 		return nil, err // Returns invalid reason wrapped
 	}
 	if !isValid {
-		return nil, fmt.Errorf("verification failed")
+		return nil, x402.NewVerifyError(x402.ErrCodeSignatureInvalid, relayedPayload.Data.Sender, "multiversx", nil)
 	}
 
 	// 2.1 Enforce Validity Windows
@@ -165,7 +165,7 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 
 	var relayedPayload multiversx.ExactRelayedPayload
 	if err := json.Unmarshal(payloadBytes, &relayedPayload); err != nil {
-		return nil, fmt.Errorf("invalid payload format: %w", err)
+		return nil, x402.NewSettleError("invalid_payload", "", "multiversx", "", err)
 	}
 
 	// 2. Prepare Transaction for Broadcasting
@@ -204,7 +204,7 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 	url := fmt.Sprintf("%s/transaction/send", s.config.APIUrl)
 	resp, err := s.client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to broadcast transaction: %w", err)
+		return nil, x402.NewSettleError("broadcast_failed", relayedPayload.Data.Sender, "multiversx", "", err)
 	}
 	defer resp.Body.Close()
 
@@ -226,7 +226,7 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 	}
 
 	if txResp.Error != "" {
-		return nil, fmt.Errorf("broadcast error: %s", txResp.Error)
+		return nil, x402.NewSettleError("node_error", relayedPayload.Data.Sender, "multiversx", "", fmt.Errorf("%s", txResp.Error))
 	}
 
 	return &x402.SettleResponse{

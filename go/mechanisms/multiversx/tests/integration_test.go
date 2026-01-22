@@ -83,6 +83,7 @@ func TestIntegration_AliceFlow(t *testing.T) {
 			// Let's try 100.
 			"nonce": 100,
 		},
+		MaxTimeoutSeconds: 3600,
 	}
 
 	// 5. Create Payload (Client)

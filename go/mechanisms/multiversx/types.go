@@ -3,7 +3,19 @@ package multiversx
 import "math/big"
 
 // SchemeExact is the identifier for the exact payment scheme
-const SchemeExact = "multiversx-exact-v1"
+const (
+	SchemeExact = "multiversx-exact-v1"
+
+	// Chain IDs
+	ChainIDMainnet = "1"
+	ChainIDDevnet  = "D"
+	ChainIDTestnet = "T"
+
+	// Gas Constants
+	GasLimitStandard = 50_000
+	GasLimitESDT     = 60_000_000
+	GasPriceDefault  = 1_000_000_000
+)
 
 // NetworkConfig holds configuration for a MultiversX network
 type NetworkConfig struct {

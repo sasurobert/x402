@@ -25,15 +25,26 @@ func (m *MockSigner) Sign(ctx context.Context, message []byte) ([]byte, error) {
 
 const (
 	// Valid Bech32 Addresses for Testing (Alice/Bob Devnet)
-	testPayTo  = "erd1qyu5wthldzr8wx5c9ucg83cq4j289968j1aw4w76hmr180iap6qs25ruc4" // Alice
+	testPayTo  = "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx" // Alice (using Bob's valid address)
 	testSender = "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx" // Bob
 	testAsset  = "TEST-123456"
 	testAmount = "1000000000000000000" // 1 EGLD
 )
 
+// MockNetworkProvider
+type MockNetworkProvider struct {
+	nonce uint64
+	err   error
+}
+
+func (m *MockNetworkProvider) GetNonce(ctx context.Context, address string) (uint64, error) {
+	return m.nonce, m.err
+}
+
 func TestCreatePaymentPayload_EGLD(t *testing.T) {
 	signer := &MockSigner{addr: testSender}
-	scheme := NewExactMultiversXScheme(signer)
+	mockProvider := &MockNetworkProvider{nonce: 15}
+	scheme := NewExactMultiversXScheme(signer, WithNetworkProvider(mockProvider))
 
 	req := types.PaymentRequirements{
 		PayTo:   testPayTo,
@@ -64,11 +75,15 @@ func TestCreatePaymentPayload_EGLD(t *testing.T) {
 	if rp.Data.Data != "" {
 		t.Errorf("Expected empty data for EGLD, got %s", rp.Data.Data)
 	}
+	if rp.Data.Nonce != 15 {
+		t.Errorf("Wrong nonce: %d", rp.Data.Nonce)
+	}
 }
 
 func TestCreatePaymentPayload_ESDT(t *testing.T) {
 	signer := &MockSigner{addr: testSender}
-	scheme := NewExactMultiversXScheme(signer)
+	mockProvider := &MockNetworkProvider{nonce: 20}
+	scheme := NewExactMultiversXScheme(signer, WithNetworkProvider(mockProvider))
 
 	req := types.PaymentRequirements{
 		PayTo:   testPayTo,
@@ -93,6 +108,10 @@ func TestCreatePaymentPayload_ESDT(t *testing.T) {
 	if rp.Data.Value != "0" {
 		t.Errorf("ESDT tx value should be 0 EGLD, got %s", rp.Data.Value)
 	}
+	// Check Nonce
+	if rp.Data.Nonce != 20 {
+		t.Errorf("Wrong nonce: %d", rp.Data.Nonce)
+	}
 
 	// Check Data field contains "MultiESDTNFTTransfer"
 	if !strings.HasPrefix(rp.Data.Data, "MultiESDTNFTTransfer") {
@@ -102,7 +121,8 @@ func TestCreatePaymentPayload_ESDT(t *testing.T) {
 
 func TestCreatePaymentPayload_ESDT_WithResourceID(t *testing.T) {
 	signer := &MockSigner{addr: testSender}
-	scheme := NewExactMultiversXScheme(signer)
+	mockProvider := &MockNetworkProvider{nonce: 25}
+	scheme := NewExactMultiversXScheme(signer, WithNetworkProvider(mockProvider))
 
 	req := types.PaymentRequirements{
 		PayTo:   testPayTo,
@@ -133,12 +153,13 @@ func TestCreatePaymentPayload_ESDT_WithResourceID(t *testing.T) {
 
 func TestCreatePaymentPayload_EGLD_Alias(t *testing.T) {
 	signer := &MockSigner{addr: testSender}
-	scheme := NewExactMultiversXScheme(signer)
+	mockProvider := &MockNetworkProvider{nonce: 30}
+	scheme := NewExactMultiversXScheme(signer, WithNetworkProvider(mockProvider))
 
 	req := types.PaymentRequirements{
 		PayTo:   testPayTo,
 		Amount:  "100",
-		Asset:   "EGLD-000000", // Should be treated as EGLD
+		Asset:   "EGLD-000000", // Should be treated as EGLD if handled or ESDT token otherwise
 		Network: "multiversx:D",
 	}
 

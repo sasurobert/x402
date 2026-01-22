@@ -50,11 +50,9 @@ func (s *ExactMultiversXScheme) GetSigners(network x402.Network) []string {
 
 func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.PaymentPayload, requirements types.PaymentRequirements) (*x402.VerifyResponse, error) {
 	// 1. Unmarshal directly to ExactRelayedPayload
-	// We can try to cast payload.Payload to map first to avoid double marshal if it's already a map
 	var relayedPayload multiversx.ExactRelayedPayload
 
 	// Convert map to struct via JSON (easiest way without mapstructure dependency)
-	// Optimization: If payload.Payload is already bytes, use it. If map, marshal-unmarshal.
 	payloadBytes, err := json.Marshal(payload.Payload)
 	if err != nil {
 		return nil, err
@@ -171,12 +169,9 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 	}
 
 	// 2. Prepare Transaction for Broadcasting
-	// The payload contains the signature and all tx fields. We construct the transaction struct found in mx-sdk-go/data or similar,
-	// but here we likely need to send to the Proxy API endpoint directly.
-
-	// Create request body for /transaction/send
-	// Note: The MultiversX API expects a specific JSON structure.
-	txSendReq := struct {
+	// multiversx-api expects base64 encoded data for /transaction/simulate, likely same for /transaction/send
+	// or it accepts the raw string which it handles. Using base64 for consistency with verify.
+	reqBody := struct {
 		Nonce     uint64 `json:"nonce"`
 		Value     string `json:"value"`
 		Receiver  string `json:"receiver"`
@@ -188,39 +183,20 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 		ChainID   string `json:"chainID"`
 		Version   uint32 `json:"version"`
 	}{
-		Nonce:    relayedPayload.Data.Nonce,
-		Value:    relayedPayload.Data.Value,
-		Receiver: relayedPayload.Data.Receiver,
-		Sender:   relayedPayload.Data.Sender,
-		GasPrice: relayedPayload.Data.GasPrice,
-		GasLimit: relayedPayload.Data.GasLimit,
-		Data:     base64.StdEncoding.EncodeToString([]byte(relayedPayload.Data.Data)), // API often expects data field? Wait, for standard send it might be hex or string. SDK sends string. Let's check docs or standard. SDK sends string usually but base64 for recent API versions?
-		// Actually, standard reference is to send as-is encoded string if it's visible, but usually API expects plain string which it hex encodes or base64.
-		// "data" field in tx is bytes.
-		// Safe bet: The `Data` field in our `relayedPayload` is "MultiESDT..." string.
-		// MultiversX Proxy `POST /transaction/send` expects `data` field to be base64 encoded bytes?
-		// Checking standard behavior: MXPY uses data literal.
-		// Let's assume standard string for now, but verify.
-		// Re-reading Verify function: verifyViaSimulation uses base64.
-		// So Settle should likely use base64 too if it's the same API family.
-		// However, standard `POST /transaction/send` often takes plain string?
-		// Let's stick to Base64 to be safe for API interaction if verify uses it.
-		// Wait, if I am unsure, I should look at verifyViaSimulation implementation.
-		// It uses: Data: base64.StdEncoding.EncodeToString([]byte(payload.Data.Data)).
-		// So I will use Base64 here too.
+		Nonce:     relayedPayload.Data.Nonce,
+		Value:     relayedPayload.Data.Value,
+		Receiver:  relayedPayload.Data.Receiver,
+		Sender:    relayedPayload.Data.Sender,
+		GasPrice:  relayedPayload.Data.GasPrice,
+		GasLimit:  relayedPayload.Data.GasLimit,
+		Data:      base64.StdEncoding.EncodeToString([]byte(relayedPayload.Data.Data)),
 		Signature: relayedPayload.Data.Signature,
 		ChainID:   relayedPayload.Data.ChainID,
 		Version:   relayedPayload.Data.Version,
 	}
 
-	// Override Data representation if needed.
-	// NOTE: standard "data" field in JSON transaction is often just the string.
-	// But `POST /transaction/send` endpoint MIGHT expect it differently or the SDK handles it.
-	// Let's look at `verifyViaSimulation` again. It sends to `/transaction/simulate`.
-	// Settle sends to `/transaction/send`.
-
-	// 3. Broadcast
-	jsonBody, err := json.Marshal(txSendReq)
+	// 3. Broadcast to /transaction/send
+	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal tx request: %w", err)
 	}

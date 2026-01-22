@@ -140,9 +140,10 @@ func TestFacilitatorVerify_ESDT_Success(t *testing.T) {
 	rp := multiversx.ExactRelayedPayload{}
 	rp.Data.Data = dataString
 	rp.Data.Value = "0"
-	rp.Data.Receiver = "erd1sender" // Self-transfer
-	rp.Data.Sender = "erd1sender"
-	rp.Data.Signature = "dummy_sig"
+	rp.Data.Receiver = payTo // Must match PayTo
+	rp.Data.Sender = payTo   // Must be valid Bech32 (using Bob as sender for convenience)
+	// Must be valid hex (64 bytes)
+	rp.Data.Signature = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
 
 	payloadBytes, _ := json.Marshal(rp)
 	var rpMap map[string]interface{}
@@ -194,9 +195,9 @@ func TestFacilitatorVerify_EGLD_Alias_MultiESDT(t *testing.T) {
 	rp := multiversx.ExactRelayedPayload{}
 	rp.Data.Data = dataString
 	rp.Data.Value = "0"
-	rp.Data.Receiver = "erd1sender"
-	rp.Data.Sender = "erd1sender"
-	rp.Data.Signature = "dummy_sig"
+	rp.Data.Receiver = payTo
+	rp.Data.Sender = payTo
+	rp.Data.Signature = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
 
 	payloadBytes, _ := json.Marshal(rp)
 	var rpMap map[string]interface{}
@@ -207,7 +208,7 @@ func TestFacilitatorVerify_EGLD_Alias_MultiESDT(t *testing.T) {
 	}
 
 	req := types.PaymentRequirements{
-		PayTo:  payTo,
+		PayTo:  payTo, // Bech32
 		Amount: "100",
 		Asset:  "EGLD-000000",
 	}
@@ -217,6 +218,6 @@ func TestFacilitatorVerify_EGLD_Alias_MultiESDT(t *testing.T) {
 		t.Fatalf("Verification failed: %v", err)
 	}
 	if !resp.IsValid {
-		t.Error("IsValid should be true for EGLD-000000 via MultiESDT")
+		t.Error("IsValid should be true")
 	}
 }

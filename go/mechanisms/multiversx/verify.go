@@ -2,6 +2,8 @@ package multiversx
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/coinbase/x402/go/types"
@@ -26,8 +28,9 @@ import (
 func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirements types.PaymentRequirements, simulator func(ExactRelayedPayload) (string, error)) (bool, error) {
 	// 1. Static Checks
 	if payload.Data.Receiver != requirements.PayTo {
-		// Strict check depending on ESDT vs EGLD?
-		// Handled by caller usually, but good to have utilities.
+		// Just a warning or strict check?
+		// EVM checks strictness usually.
+		return false, fmt.Errorf("receiver mismatch: got %s, want %s", payload.Data.Receiver, requirements.PayTo)
 	}
 
 	// 2. Signature Presence
@@ -35,7 +38,77 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 		return false, fmt.Errorf("missing signature")
 	}
 
-	// 3. Simulation (The specific "Universal" verification for MX)
+	// 3. Local Ed25519 Verification
+	// If we can verify locally, we essentially validate the signature is correct for the Sender.
+	// But we also need to ensure the Tx itself is valid (nonce, balance, etc).
+	// Simulator does both.
+	// However, usually we trust the signature if we trust the sender has funds (which we can check separately or rely on error later).
+	// For "VerifyPayment", getting a valid signature is a strong signal.
+
+	// A. Construct Signable Message
+	txData := struct {
+		Nonce    uint64 `json:"nonce"`
+		Value    string `json:"value"`
+		Receiver string `json:"receiver"`
+		Sender   string `json:"sender"`
+		GasPrice uint64 `json:"gasPrice"`
+		GasLimit uint64 `json:"gasLimit"`
+		Data     string `json:"data"`
+		ChainID  string `json:"chainID"`
+		Version  uint32 `json:"version"`
+		Options  uint32 `json:"options"`
+	}{
+		Nonce:    payload.Data.Nonce,
+		Value:    payload.Data.Value,
+		Receiver: payload.Data.Receiver,
+		Sender:   payload.Data.Sender,
+		GasPrice: payload.Data.GasPrice,
+		GasLimit: payload.Data.GasLimit,
+		Data:     payload.Data.Data,
+		ChainID:  payload.Data.ChainID,
+		Version:  payload.Data.Version,
+		Options:  payload.Data.Options,
+	}
+
+	msgBytes, err := SerializeTransaction(txData)
+	if err != nil {
+		// If serialization fails, maybe fallback to sim?
+		// But basic serialization shouldn't fail.
+		return false, fmt.Errorf("serialization failed: %w", err)
+	}
+
+	// B. Verify Signature
+	// Decode Sender Bech32 -> PubKey
+	// address = hrp + pubkey
+	_, pubKeyBytes, err := DecodeBech32(payload.Data.Sender)
+	if err != nil {
+		// Invalid sender address format
+		return false, fmt.Errorf("invalid sender address: %w", err)
+	}
+
+	sigBytes, err := hex.DecodeString(payload.Data.Signature)
+	if err != nil {
+		return false, fmt.Errorf("invalid signature hex: %w", err)
+	}
+
+	if len(sigBytes) != 64 {
+		return false, fmt.Errorf("invalid signature length: %d", len(sigBytes))
+	}
+
+	if len(pubKeyBytes) != 32 {
+		return false, fmt.Errorf("invalid public key length: %d", len(pubKeyBytes))
+	}
+
+	if ed25519.Verify(pubKeyBytes, msgBytes, sigBytes) {
+		// Valid Signature!
+		return true, nil
+	}
+
+	// 4. Fallback to Simulation
+	// If local verify fails, it MIGHT be because `SerializeTransaction` doesn't match node's expectation
+	// or it's a Smart Contract Wallet (MultiSig) which doesn't sign with Ed25519 of the address key.
+	// So we attempt simulation.
+
 	hash, err := simulator(payload)
 	if err != nil {
 		return false, fmt.Errorf("simulation failed: %w", err)

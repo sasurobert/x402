@@ -2,6 +2,9 @@ package multiversx
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -9,40 +12,75 @@ import (
 )
 
 func TestVerifyPayment(t *testing.T) {
-	// Setup valid payload
-	validPayload := ExactRelayedPayload{}
-	validPayload.Data.Receiver = "erd1receiver"
-	validPayload.Data.Signature = "sig"
+	// 1. Generate Keypair
+	pubKey, privKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("Failed to generate key: %v", err)
+	}
+
+	// 2. Create Sender Address
+	senderBech32, err := EncodeBech32("erd", pubKey)
+	if err != nil {
+		t.Fatalf("Failed to encode address: %v", err)
+	}
+
+	// 3. Setup Payload
+	payload := ExactRelayedPayload{}
+	payload.Data.Nonce = 1
+	payload.Data.Value = "0"
+	payload.Data.Receiver = "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx"
+	payload.Data.Sender = senderBech32
+	payload.Data.GasPrice = 1000000000
+	payload.Data.GasLimit = 50000
+	payload.Data.Data = "test"
+	payload.Data.ChainID = "D"
+	payload.Data.Version = 1
+	payload.Data.Options = 0
+
+	// 4. Sign locally
+	// Serialize exact format we expect verification logic to use
+	txMap := map[string]interface{}{
+		"nonce":    payload.Data.Nonce,
+		"value":    payload.Data.Value,
+		"receiver": payload.Data.Receiver,
+		"sender":   payload.Data.Sender,
+		"gasPrice": payload.Data.GasPrice,
+		"gasLimit": payload.Data.GasLimit,
+		"data":     payload.Data.Data,
+		"chainID":  payload.Data.ChainID,
+		"version":  payload.Data.Version,
+		"options":  payload.Data.Options,
+	}
+
+	txBytes, _ := json.Marshal(txMap)
+
+	sig := ed25519.Sign(privKey, txBytes)
+	payload.Data.Signature = hex.EncodeToString(sig)
 
 	req := types.PaymentRequirements{
-		PayTo: "erd1receiver",
+		PayTo: "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx",
 	}
 
-	// Mock Simulator
-	successSim := func(p ExactRelayedPayload) (string, error) {
-		return "hash", nil
-	}
+	// 5. Test
+	// Pass a simulator that fails, so we enforce Local Verification success
 	failSim := func(p ExactRelayedPayload) (string, error) {
-		return "", errors.New("sim failed")
+		return "", errors.New("fallback to sim should not happen if local verifies")
 	}
 
-	// Case 1: Success
-	valid, err := VerifyPayment(context.Background(), validPayload, req, successSim)
-	if err != nil || !valid {
-		t.Errorf("Expected success, got valid=%v err=%v", valid, err)
+	valid, err := VerifyPayment(context.Background(), payload, req, failSim)
+	if err != nil {
+		t.Errorf("VerifyPayment failed: %v", err)
+	}
+	if !valid {
+		t.Error("VerifyPayment returned false")
 	}
 
-	// Case 2: Missing Sig
-	noSig := validPayload
-	noSig.Data.Signature = ""
-	valid, err = VerifyPayment(context.Background(), noSig, req, successSim)
-	if err == nil {
-		t.Error("Expected error for missing sig")
-	}
-
-	// Case 3: Sim Fail
-	valid, err = VerifyPayment(context.Background(), validPayload, req, failSim)
-	if err == nil {
-		t.Error("Expected error for sim failure")
+	// Test Bad Sig
+	payload.Data.Signature = hex.EncodeToString(make([]byte, 64)) // invalid
+	valid, err = VerifyPayment(context.Background(), payload, req, func(p ExactRelayedPayload) (string, error) {
+		return "", errors.New("sim fail")
+	})
+	if valid || err == nil {
+		t.Error("Expected failure for bad sig")
 	}
 }

@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
@@ -195,17 +194,15 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 	validAfter := now - 600 // 10 minutes ago
 	validBefore := now + int64(requirements.MaxTimeoutSeconds)
 
-	txData := struct {
-		Nonce    uint64 `json:"nonce"`
-		Value    string `json:"value"`
-		Receiver string `json:"receiver"`
-		Sender   string `json:"sender"`
-		GasPrice uint64 `json:"gasPrice"`
-		GasLimit uint64 `json:"gasLimit"`
-		Data     string `json:"data,omitempty"`
-		ChainID  string `json:"chainID"`
-		Version  uint32 `json:"version"`
-	}{
+	// Fetch Options from Extra if present
+	options := uint32(0)
+	if opt, ok := requirements.Extra["options"].(float64); ok {
+		options = uint32(opt)
+	} else if opt, ok := requirements.Extra["options"].(int); ok {
+		options = uint32(opt)
+	}
+
+	txData := multiversx.TransactionData{
 		Nonce:    nonce,
 		Value:    value,
 		Receiver: receiver,
@@ -215,10 +212,11 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 		Data:     dataString,
 		ChainID:  chainID,
 		Version:  version,
+		Options:  options,
 	}
 
-	// 4. Serialize for Signing (Canonical JSON)
-	txBytes, err := json.Marshal(txData)
+	// 4. Serialize for Signing (Canonical JSON - alphabetical sorting)
+	txBytes, err := multiversx.SerializeTransaction(txData)
 	if err != nil {
 		return types.PaymentPayload{}, err
 	}

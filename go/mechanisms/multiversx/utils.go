@@ -105,18 +105,7 @@ func CalculateGasLimit(data []byte, numTransfers int) uint64 {
 }
 
 // SerializeTransaction creates the bytes to be signed
-func SerializeTransaction(data struct {
-	Nonce    uint64 `json:"nonce"`
-	Value    string `json:"value"`
-	Receiver string `json:"receiver"`
-	Sender   string `json:"sender"`
-	GasPrice uint64 `json:"gasPrice"`
-	GasLimit uint64 `json:"gasLimit"`
-	Data     string `json:"data"`
-	ChainID  string `json:"chainID"`
-	Version  uint32 `json:"version"`
-	Options  uint32 `json:"options"`
-}) ([]byte, error) {
+func SerializeTransaction(data TransactionData) ([]byte, error) {
 	// Standard JSON serialization of the map of fields
 	// We use a map to relying on encoding/json to sort keys mostly, but typically sdk signatures rely on specific order.
 	// Go's json marshaling of map sorts keys alphabetically.

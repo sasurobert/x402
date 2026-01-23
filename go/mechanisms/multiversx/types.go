@@ -43,6 +43,20 @@ type ExactRelayedPayload struct {
 	} `json:"data"`
 }
 
+// TransactionData represents the canonical transaction fields for signing
+type TransactionData struct {
+	Nonce    uint64 `json:"nonce"`
+	Value    string `json:"value"`
+	Receiver string `json:"receiver"`
+	Sender   string `json:"sender"`
+	GasPrice uint64 `json:"gasPrice"`
+	GasLimit uint64 `json:"gasLimit"`
+	Data     string `json:"data,omitempty"`
+	ChainID  string `json:"chainID"`
+	Version  uint32 `json:"version"`
+	Options  uint32 `json:"options,omitempty"`
+}
+
 // SimulationRequest represents the body for /transaction/simulate
 type SimulationRequest struct {
 	Nonce     uint64 `json:"nonce"`
@@ -54,6 +68,7 @@ type SimulationRequest struct {
 	Data      string `json:"data,omitempty"`
 	ChainID   string `json:"chainID"`
 	Version   uint32 `json:"version"`
+	Options   uint32 `json:"options,omitempty"`
 	Signature string `json:"signature"`
 }
 

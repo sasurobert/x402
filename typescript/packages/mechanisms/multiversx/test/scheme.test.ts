@@ -21,13 +21,20 @@ mockTransaction.applySignature(Buffer.from('mock_sig_hex', 'hex')) // Ensure it 
 
 const mockSigner = {
   address: alice,
-  signTransaction: vi.fn(async () => mockTransaction),
+  sign: vi.fn(async () => 'mock_sig_hex'),
 } as unknown as MultiversXSigner
 
 describe('ExactMultiversXScheme', () => {
   const scheme = new ExactMultiversXScheme(mockSigner)
 
   it('should create a valid payment payload', async () => {
+    // Mock Provider return value
+    vi.mock('@multiversx/sdk-network-providers', () => ({
+      ApiNetworkProvider: vi.fn().mockImplementation(() => ({
+        getAccount: vi.fn().mockResolvedValue({ nonce: 7 }),
+      })),
+    }))
+
     const req: PaymentRequirements = {
       payTo: bob,
       amount: '1000',
@@ -43,10 +50,10 @@ describe('ExactMultiversXScheme', () => {
 
     expect(result.x402Version).toBe(1)
     // Relayed Payload checks
-    expect(result.payload.signature).toBe(mockTransaction.getSignature().toString('hex'))
+    expect(result.payload.signature).toBe('mock_sig_hex')
     expect(result.payload.nonce).toBe(7)
     expect(result.payload.value).toBe('1000')
-    expect(result.payload.sender.toString()).toBe(alice)
+    expect(result.payload.sender).toBe(alice)
     // Authorization context check
     expect(result.payload.authorization.resourceId).toBe('res-1')
 

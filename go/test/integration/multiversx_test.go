@@ -64,30 +64,38 @@ func TestIntegration_AliceFlow(t *testing.T) {
 	}
 
 	// 2. Setup Client
+	ctx := context.Background()
 	cScheme := client.NewExactMultiversXScheme(signer)
 
 	// 3. Setup Facilitator (Connected to Devnet)
-	fScheme := facilitator.NewExactMultiversXScheme("https://devnet-api.multiversx.com")
+	devnetURL := "https://devnet-api.multiversx.com"
+	fScheme := facilitator.NewExactMultiversXScheme(devnetURL)
+
+	// Fetch Real Nonce for Alice
+	provider := client.NewProxyNetworkProvider(devnetURL)
+	realNonce, err := provider.GetNonce(ctx, signer.Address())
+	if err != nil {
+		t.Logf("Failed to fetch real Alice nonce, using fallback 100: %v", err)
+		realNonce = 100
+	} else {
+		t.Logf("Fetched real Alice nonce: %d", realNonce)
+	}
 
 	// 4. Requirements (Bob as receiver)
 	bobAddr := "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx"
 	req := types.PaymentRequirements{
-		PayTo:   bobAddr,
-		Amount:  "1000000000000000000", // 1 EGLD
-		Asset:   "EGLD",
-		Network: "multiversx:D",
-		Extra: map[string]interface{}{
-			// We MUST provide a valid nonce for simulation to work if account has txs.
-			// Ideally we fetch it. For test, we might guess or use a hardcoded one if it's stateless simulation?
-			// Simulation usually ignores nonce check unless purely validating signature against it.
-			// Let's try 100.
-			"nonce": 100,
-		},
+		PayTo:             bobAddr,
+		Amount:            "1000000000000000000", // 1 EGLD
+		Asset:             "EGLD",
+		Network:           "multiversx:D",
 		MaxTimeoutSeconds: 3600,
+		Extra: map[string]interface{}{
+			"resourceId": "test-resource-alice",
+			"nonce":      realNonce,
+		},
 	}
 
 	// 5. Create Payload (Client)
-	ctx := context.Background()
 	payload, err := cScheme.CreatePaymentPayload(ctx, req)
 	if err != nil {
 		t.Fatalf("Client failed to create payload: %v", err)
@@ -97,9 +105,7 @@ func TestIntegration_AliceFlow(t *testing.T) {
 	// This will hit Devnet API /transaction/simulate
 	resp, err := fScheme.Verify(ctx, payload, req)
 	if err != nil {
-		t.Logf("Verification failed (might be network/nonce issue): %v", err)
-		// We don't fail validation if network is unreachable in CI, but for local run it helps.
-		// If strict: t.Fatalf("Verification failed: %v", err)
+		t.Fatalf("Verification failed: %v", err)
 	} else {
 		if !resp.IsValid {
 			t.Fatalf("Verification returned invalid (check logs for details)")

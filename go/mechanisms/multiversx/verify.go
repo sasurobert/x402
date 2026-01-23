@@ -47,18 +47,7 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 	// For "VerifyPayment", getting a valid signature is a strong signal.
 
 	// A. Construct Signable Message
-	txData := struct {
-		Nonce    uint64 `json:"nonce"`
-		Value    string `json:"value"`
-		Receiver string `json:"receiver"`
-		Sender   string `json:"sender"`
-		GasPrice uint64 `json:"gasPrice"`
-		GasLimit uint64 `json:"gasLimit"`
-		Data     string `json:"data"`
-		ChainID  string `json:"chainID"`
-		Version  uint32 `json:"version"`
-		Options  uint32 `json:"options"`
-	}{
+	txData := TransactionData{
 		Nonce:    payload.Data.Nonce,
 		Value:    payload.Data.Value,
 		Receiver: payload.Data.Receiver,

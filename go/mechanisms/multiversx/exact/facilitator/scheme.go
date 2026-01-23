@@ -182,6 +182,7 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 		Signature string `json:"signature"`
 		ChainID   string `json:"chainID"`
 		Version   uint32 `json:"version"`
+		Options   uint32 `json:"options,omitempty"`
 	}{
 		Nonce:     relayedPayload.Data.Nonce,
 		Value:     relayedPayload.Data.Value,
@@ -193,6 +194,7 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 		Signature: relayedPayload.Data.Signature,
 		ChainID:   relayedPayload.Data.ChainID,
 		Version:   relayedPayload.Data.Version,
+		Options:   relayedPayload.Data.Options,
 	}
 
 	// 3. Broadcast to /transaction/send
@@ -246,6 +248,7 @@ func (s *ExactMultiversXScheme) verifyViaSimulation(payload multiversx.ExactRela
 		Data:      base64.StdEncoding.EncodeToString([]byte(payload.Data.Data)),
 		ChainID:   payload.Data.ChainID,
 		Version:   payload.Data.Version,
+		Options:   payload.Data.Options,
 		Signature: payload.Data.Signature,
 	}
 

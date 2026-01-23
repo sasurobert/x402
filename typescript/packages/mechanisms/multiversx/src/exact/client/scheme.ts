@@ -15,7 +15,7 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
    *
    * @param signer - The MultiversX signer instance
    */
-  constructor(private readonly signer: MultiversXSigner) {}
+  constructor(private readonly signer: MultiversXSigner) { }
 
   /**
    * Creates a payment payload.
@@ -40,17 +40,14 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
     // Fetch Nonce from Network
     const provider = new ApiNetworkProvider(apiUrl)
     const senderAddress = new Address(this.signer.address)
-    const account = new Account(senderAddress)
 
+    let nonce = 0
     try {
-      await account.sync(provider)
+      const accountData = await provider.getAccount(senderAddress)
+      nonce = accountData.nonce
     } catch (error) {
-      console.warn('Failed to sync account for nonce, defaulting to 0', error)
-      // We might want to throw here, but for strictness let's throw.
-      // However, if offline signing is needed, maybe 0 is acceptable placeholder?
-      // Given the user asked for "full implementation... read from API", we should respect that.
+      console.warn('Failed to fetch account for nonce, defaulting to 0', error)
     }
-    const nonce = account.nonce.valueOf()
 
     // We assume 'paymentRequirements.asset' holds the Token Identifier (EGLD or TokenID)
     // The 'payTo' is the SC Address.
@@ -71,15 +68,11 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
       resourceId: resourceId,
       validAfter: (now - 600).toString(), // 10 minutes ago
       validBefore: (now + paymentRequirements.maxTimeoutSeconds).toString(),
-      nonce: typeof nonce === 'number' ? nonce : nonce.toNumber(), // Ensure number
+      nonce: nonce,
     }
 
     const chainId = chainRef
 
-    // Sign the authorization -> Returns Signature Buffer
-    // The signer will use the nonce if provided in the authorization/request
-    // We need to cast authorization to PaymentRequest compatible object or signer needs update?
-    // signer.sign takes PaymentRequest which matches Authorization mostly.
     const request = {
       to: authorization.to,
       amount: authorization.value,

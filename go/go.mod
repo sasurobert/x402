@@ -14,7 +14,10 @@ require (
 	github.com/xeipuuv/gojsonschema v1.2.0
 )
 
-require github.com/multiversx/mx-sdk-go v1.5.0
+require (
+	github.com/multiversx/mx-chain-core-go v1.4.0
+	github.com/multiversx/mx-sdk-go v1.5.0
+)
 
 require (
 	filippo.io/edwards25519 v1.0.0 // indirect
@@ -65,7 +68,6 @@ require (
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/multiversx/concurrent-map v0.1.4 // indirect
 	github.com/multiversx/mx-chain-communication-go v1.3.0 // indirect
-	github.com/multiversx/mx-chain-core-go v1.4.0 // indirect
 	github.com/multiversx/mx-chain-crypto-go v1.3.0 // indirect
 	github.com/multiversx/mx-chain-go v1.10.0 // indirect
 	github.com/multiversx/mx-chain-logger-go v1.1.0 // indirect

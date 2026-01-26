@@ -46,7 +46,8 @@ Calling a function `buy` with arguments `[0x01, 0xABC]` while sending EGLD.
   {
     "assetTransferMethod": "direct",
     "scFunction": "buy",
-    "arguments": ["01", "abc"]
+    "arguments": ["01", "abc"],
+    "gasLimit": 50000
   }
   ```
 
@@ -123,7 +124,8 @@ Calling `deposit` on a contract while sending USDC.
   {
     "assetTransferMethod": "esdt",
     "scFunction": "deposit",
-    "arguments": ["05"] // e.g. lock period
+    "arguments": ["05"], // e.g. lock period
+    "gasLimit": 60000000
   }
   ```
 

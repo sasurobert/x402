@@ -70,7 +70,10 @@ func TestIntegration_AliceFlow(t *testing.T) {
 
 	// 2. Setup Components
 	ctx := context.Background()
-	cScheme := client.NewExactMultiversXScheme(signer)
+	cScheme, err := client.NewExactMultiversXScheme(signer, "multiversx:D")
+	if err != nil {
+		t.Fatalf("Failed to create client scheme: %v", err)
+	}
 
 	devnetURL := multiversx.GetAPIURL(multiversx.ChainIDDevnet)
 	fScheme := facilitator.NewExactMultiversXScheme(devnetURL)

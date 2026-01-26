@@ -147,17 +147,42 @@ func TestValidatePaymentRequirements(t *testing.T) {
 func TestEnhancePaymentRequirements(t *testing.T) {
 	scheme := NewExactMultiversXScheme()
 
-	req := types.PaymentRequirements{
-		PayTo: "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx",
-		Asset: "EGLD", // Explicitly provided as default is removed
-	}
+	t.Run("Success EGLD", func(t *testing.T) {
+		req := types.PaymentRequirements{
+			PayTo:  "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx",
+			Asset:  "EGLD",
+			Amount: "1000",
+		}
+		got, err := scheme.EnhancePaymentRequirements(context.Background(), req, types.SupportedKind{}, nil)
+		if err != nil {
+			t.Fatalf("EnhancePaymentRequirements error: %v", err)
+		}
+		if got.Extra["assetTransferMethod"] != "direct" {
+			t.Errorf("Expected transfer method direct, got %v", got.Extra["assetTransferMethod"])
+		}
+	})
 
-	got, err := scheme.EnhancePaymentRequirements(context.Background(), req, types.SupportedKind{}, nil)
-	if err != nil {
-		t.Fatalf("EnhancePaymentRequirements error: %v", err)
-	}
+	t.Run("Failure Invalid Address", func(t *testing.T) {
+		req := types.PaymentRequirements{
+			PayTo:  "invalid-address",
+			Asset:  "EGLD",
+			Amount: "1000",
+		}
+		_, err := scheme.EnhancePaymentRequirements(context.Background(), req, types.SupportedKind{}, nil)
+		if err == nil {
+			t.Error("Expected error for invalid address, got nil")
+		}
+	})
 
-	if got.Extra["assetTransferMethod"] != "direct" {
-		t.Errorf("Expected transfer method direct, got %v", got.Extra["assetTransferMethod"])
-	}
+	t.Run("Failure Missing Asset", func(t *testing.T) {
+		req := types.PaymentRequirements{
+			PayTo:  "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx",
+			Asset:  "",
+			Amount: "1000",
+		}
+		_, err := scheme.EnhancePaymentRequirements(context.Background(), req, types.SupportedKind{}, nil)
+		if err == nil {
+			t.Error("Expected error for missing asset, got nil")
+		}
+	})
 }

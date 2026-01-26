@@ -120,6 +120,11 @@ func (s *ExactMultiversXScheme) EnhancePaymentRequirements(
 	supportedKind types.SupportedKind,
 	extensions []string,
 ) (types.PaymentRequirements, error) {
+	// Perform strict validation
+	if err := s.ValidatePaymentRequirements(requirements); err != nil {
+		return requirements, err
+	}
+
 	reqCopy := requirements
 	if reqCopy.Extra != nil {
 		newExtra := make(map[string]interface{}, len(reqCopy.Extra))
@@ -131,22 +136,21 @@ func (s *ExactMultiversXScheme) EnhancePaymentRequirements(
 		reqCopy.Extra = make(map[string]interface{})
 	}
 
-	if reqCopy.PayTo == "" {
-		return reqCopy, fmt.Errorf("PayTo is required for MultiversX payments")
-	}
-
-	if reqCopy.Asset == "" {
-		return reqCopy, fmt.Errorf("asset is required")
-	}
-
 	if _, ok := reqCopy.Extra["assetTransferMethod"]; !ok {
 		if reqCopy.Asset == multiversx.NativeTokenTicker {
 			reqCopy.Extra["assetTransferMethod"] = multiversx.TransferMethodDirect
+		} else {
+			reqCopy.Extra["assetTransferMethod"] = multiversx.TransferMethodESDT
 		}
 	}
 
-	// Parse Options if present in some other form, or ensure it's passed through
-	// Currently just passing through Extra.
+	if _, ok := reqCopy.Extra["gasLimit"]; !ok {
+		if reqCopy.Extra["assetTransferMethod"] == multiversx.TransferMethodDirect {
+			reqCopy.Extra["gasLimit"] = uint64(multiversx.GasLimitStandard)
+		} else {
+			reqCopy.Extra["gasLimit"] = uint64(multiversx.GasLimitESDT)
+		}
+	}
 
 	return reqCopy, nil
 }

@@ -82,7 +82,7 @@ func (m *MockProxy) FilterLogs(ctx context.Context, filter *core.FilterQuery) ([
 func TestCreatePaymentPayload_EGLD(t *testing.T) {
 	signer := &MockSigner{addr: testSender}
 	mockProxy := &MockProxy{nonce: 15}
-	scheme := NewExactMultiversXScheme(signer, WithProxy(mockProxy))
+	scheme, _ := NewExactMultiversXScheme(signer, "multiversx:D", WithProxy(mockProxy))
 
 	req := types.PaymentRequirements{
 		PayTo:   testPayTo,
@@ -117,10 +117,44 @@ func TestCreatePaymentPayload_EGLD(t *testing.T) {
 	}
 }
 
+func TestCreatePaymentPayload_EGLD_WithScFunction(t *testing.T) {
+	signer := &MockSigner{addr: testSender}
+	mockProxy := &MockProxy{nonce: 15}
+	scheme, _ := NewExactMultiversXScheme(signer, "multiversx:D", WithProxy(mockProxy))
+
+	req := types.PaymentRequirements{
+		PayTo:   testPayTo,
+		Amount:  "100",
+		Asset:   "EGLD",
+		Network: "multiversx:D",
+		Extra: map[string]interface{}{
+			"scFunction": "buy",
+			"arguments":  []interface{}{"01", "02"},
+		},
+	}
+
+	payload, err := scheme.CreatePaymentPayload(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Failed to create payload: %v", err)
+	}
+
+	rpPtr, err := multiversx.PayloadFromMap(payload.Payload)
+	if err != nil {
+		t.Fatalf("Failed to parse payload: %v", err)
+	}
+	rp := *rpPtr
+
+	// Should be plain text for native: buy@01@02
+	expectedData := "buy@01@02"
+	if rp.Data != expectedData {
+		t.Errorf("Wrong data: expected %s, got %s", expectedData, rp.Data)
+	}
+}
+
 func TestCreatePaymentPayload_ESDT(t *testing.T) {
 	signer := &MockSigner{addr: testSender}
 	mockProxy := &MockProxy{nonce: 20}
-	scheme := NewExactMultiversXScheme(signer, WithProxy(mockProxy))
+	scheme, _ := NewExactMultiversXScheme(signer, "multiversx:D", WithProxy(mockProxy))
 
 	req := types.PaymentRequirements{
 		PayTo:   testPayTo,
@@ -161,7 +195,7 @@ func TestCreatePaymentPayload_ESDT(t *testing.T) {
 func TestCreatePaymentPayload_ESDT_WithResourceID(t *testing.T) {
 	signer := &MockSigner{addr: testSender}
 	mockProxy := &MockProxy{nonce: 25}
-	scheme := NewExactMultiversXScheme(signer, WithProxy(mockProxy))
+	scheme, _ := NewExactMultiversXScheme(signer, "multiversx:D", WithProxy(mockProxy))
 
 	req := types.PaymentRequirements{
 		PayTo:   testPayTo,
@@ -195,7 +229,7 @@ func TestCreatePaymentPayload_ESDT_WithResourceID(t *testing.T) {
 func TestCreatePaymentPayload_EGLD_Alias(t *testing.T) {
 	signer := &MockSigner{addr: testSender}
 	mockProxy := &MockProxy{nonce: 30}
-	scheme := NewExactMultiversXScheme(signer, WithProxy(mockProxy))
+	scheme, _ := NewExactMultiversXScheme(signer, "multiversx:D", WithProxy(mockProxy))
 
 	req := types.PaymentRequirements{
 		PayTo:   testPayTo,

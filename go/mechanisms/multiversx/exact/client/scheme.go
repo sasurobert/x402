@@ -14,6 +14,7 @@ import (
 	"github.com/multiversx/mx-sdk-go/core"
 	"github.com/multiversx/mx-sdk-go/data"
 
+	x402 "github.com/coinbase/x402/go"
 	"github.com/coinbase/x402/go/mechanisms/multiversx"
 
 	"github.com/coinbase/x402/go/types"
@@ -21,8 +22,10 @@ import (
 
 // ExactMultiversXScheme implements SchemeNetworkClient
 type ExactMultiversXScheme struct {
-	signer multiversx.ClientMultiversXSigner
-	proxy  blockchain.Proxy
+	signer  multiversx.ClientMultiversXSigner
+	network x402.Network
+	chainID string
+	proxy   blockchain.Proxy
 }
 
 // Option defines functional options for ExactMultiversXScheme
@@ -34,14 +37,39 @@ func WithProxy(proxy blockchain.Proxy) Option {
 	}
 }
 
-func NewExactMultiversXScheme(signer multiversx.ClientMultiversXSigner, opts ...Option) *ExactMultiversXScheme {
+func NewExactMultiversXScheme(signer multiversx.ClientMultiversXSigner, network x402.Network, opts ...Option) (*ExactMultiversXScheme, error) {
+	chainID, err := multiversx.GetMultiversXChainId(string(network))
+	if err != nil {
+		return nil, err
+	}
+
 	s := &ExactMultiversXScheme{
-		signer: signer,
+		signer:  signer,
+		network: network,
+		chainID: chainID,
 	}
 	for _, opt := range opts {
 		opt(s)
 	}
-	return s
+
+	if s.proxy == nil {
+		apiURL := multiversx.GetAPIURL(s.chainID)
+		args := blockchain.ArgsProxy{
+			ProxyURL:            apiURL,
+			Client:              nil,
+			SameScState:         false,
+			ShouldBeSynced:      false,
+			FinalityCheck:       false,
+			EntityType:          core.Proxy,
+			CacheExpirationTime: time.Minute,
+		}
+		s.proxy, err = blockchain.NewProxy(args)
+		if err != nil {
+			return nil, fmt.Errorf("failed to init proxy for %s: %w", network, err)
+		}
+	}
+
+	return s, nil
 }
 
 func (s *ExactMultiversXScheme) Scheme() string {
@@ -58,45 +86,21 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 	}
 
 	gasLimit := uint64(multiversx.GasLimitStandard)
-	if gl, ok := requirements.Extra["gasLimit"].(float64); ok {
+	if gl, ok := requirements.Extra["gasLimit"].(uint64); ok {
+		gasLimit = gl
+	} else if gl, ok := requirements.Extra["gasLimit"].(float64); ok {
 		gasLimit = uint64(gl)
 	} else if gl, ok := requirements.Extra["gasLimit"].(int); ok {
 		gasLimit = uint64(gl)
 	}
-	gasPrice := uint64(multiversx.GasPriceDefault)
-
 	version := uint32(1)
-	chainID := multiversx.ChainIDMainnet
-
-	if requirements.Network != "" {
-		parts := strings.Split(string(requirements.Network), ":")
-		if len(parts) > 1 {
-			chainID = parts[1]
-		}
-	}
-	apiURL := multiversx.GetAPIURL(chainID)
+	chainID := s.chainID
 
 	sender := s.signer.Address()
 	receiver := requirements.PayTo
 	value := requirements.Amount
 	dataString := ""
-
-	if s.proxy == nil {
-		args := blockchain.ArgsProxy{
-			ProxyURL:            apiURL,
-			Client:              nil,
-			SameScState:         false,
-			ShouldBeSynced:      false,
-			FinalityCheck:       false,
-			EntityType:          core.Proxy,
-			CacheExpirationTime: time.Minute,
-		}
-		var err error
-		s.proxy, err = blockchain.NewProxy(args)
-		if err != nil {
-			return types.PaymentPayload{}, fmt.Errorf("failed to init default proxy: %w", err)
-		}
-	}
+	gasPrice := uint64(multiversx.GasPriceDefault)
 
 	senderAddr, err := data.NewAddressFromBech32String(sender)
 	if err != nil {
@@ -107,6 +111,17 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 		return types.PaymentPayload{}, fmt.Errorf("failed to fetch nonce: %w", err)
 	}
 	nonce := account.Nonce
+
+	// Extract SC function and arguments early to avoid duplication
+	scFunction, _ := requirements.Extra["scFunction"].(string)
+	var arguments []string
+	if argsInterface, ok := requirements.Extra["arguments"].([]interface{}); ok {
+		for _, arg := range argsInterface {
+			if argStr, ok := arg.(string); ok {
+				arguments = append(arguments, argStr)
+			}
+		}
+	}
 
 	asset := requirements.Asset
 	if asset == "" {
@@ -127,69 +142,41 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 		if !ok {
 			return types.PaymentPayload{}, fmt.Errorf("invalid amount: %s", requirements.Amount)
 		}
-		amtHex := amtBig.Text(16)
-		if len(amtHex)%2 != 0 {
-			amtHex = "0" + amtHex
+		amtHex := hex.EncodeToString(amtBig.Bytes())
+
+		parts := []string{
+			"MultiESDTNFTTransfer",
+			destHex,
+			"01",
+			tokenHex,
+			"00",
+			amtHex,
 		}
 
-		var scFunctionHex string
-		if rid, ok := requirements.Extra["scFunction"].(string); ok && rid != "" {
-			scFunctionHex = hex.EncodeToString([]byte(rid))
+		if scFunction != "" {
+			parts = append(parts, hex.EncodeToString([]byte(scFunction)))
 		}
 
-		var extraArgs []string
-		if argsInterface, ok := requirements.Extra["arguments"].([]interface{}); ok {
-			for _, arg := range argsInterface {
-				if argStr, ok := arg.(string); ok {
-					extraArgs = append(extraArgs, argStr)
-				}
-			}
+		if len(arguments) > 0 {
+			parts = append(parts, arguments...)
 		}
 
-		baseData := fmt.Sprintf("MultiESDTNFTTransfer@%s@01@%s@00@%s", destHex, tokenHex, amtHex)
-
-		if scFunctionHex != "" {
-			baseData += "@" + scFunctionHex
-		}
-
-		if len(extraArgs) > 0 {
-			baseData += "@" + strings.Join(extraArgs, "@")
-		}
-
-		dataString = baseData
+		dataString = strings.Join(parts, "@")
 
 	} else {
-		if rid, ok := requirements.Extra["scFunction"].(string); ok && rid != "" {
-			dataString = hex.EncodeToString([]byte(rid))
+		parts := []string{}
+		if scFunction != "" {
+			parts = append(parts, scFunction)
 		}
-
-		if argsInterface, ok := requirements.Extra["arguments"].([]interface{}); ok {
-			var extraArgs []string
-			for _, arg := range argsInterface {
-				if argStr, ok := arg.(string); ok {
-					extraArgs = append(extraArgs, argStr)
-				}
-			}
-			if len(extraArgs) > 0 {
-				if dataString == "" {
-					dataString = strings.Join(extraArgs, "@")
-				} else {
-					dataString += "@" + strings.Join(extraArgs, "@")
-				}
-			}
+		if len(arguments) > 0 {
+			parts = append(parts, arguments...)
 		}
+		dataString = strings.Join(parts, "@")
 	}
 
 	now := time.Now().Unix()
 	validAfter := uint64(now - 600)
 	validBefore := uint64(now + int64(requirements.MaxTimeoutSeconds))
-
-	options := uint32(0)
-	if opt, ok := requirements.Extra["options"].(float64); ok {
-		options = uint32(opt)
-	} else if opt, ok := requirements.Extra["options"].(int); ok {
-		options = uint32(opt)
-	}
 
 	txData := multiversx.ExactRelayedPayload{
 		Nonce:       nonce,
@@ -201,7 +188,7 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 		Data:        dataString,
 		ChainID:     chainID,
 		Version:     version,
-		Options:     options,
+		Options:     0,
 		ValidAfter:  validAfter,
 		ValidBefore: validBefore,
 	}

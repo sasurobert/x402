@@ -28,15 +28,15 @@ import (
 
 func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirements types.PaymentRequirements, simulator func(ExactRelayedPayload) (string, error)) (bool, error) {
 	// 1. Static Checks
-	if payload.Data.Receiver != requirements.PayTo {
+	if payload.Receiver != requirements.PayTo {
 		// Just a warning or strict check?
 		// EVM checks strictness usually.
-		return false, x402.NewVerifyError("receiver_mismatch", payload.Data.Sender, "multiversx", fmt.Errorf("got %s, want %s", payload.Data.Receiver, requirements.PayTo))
+		return false, x402.NewVerifyError("receiver_mismatch", payload.Sender, "multiversx", fmt.Errorf("got %s, want %s", payload.Receiver, requirements.PayTo))
 	}
 
 	// 2. Signature Presence
-	if payload.Data.Signature == "" {
-		return false, x402.NewVerifyError(x402.ErrCodeSignatureInvalid, payload.Data.Sender, "multiversx", fmt.Errorf("missing signature"))
+	if payload.Signature == "" {
+		return false, x402.NewVerifyError(x402.ErrCodeSignatureInvalid, payload.Sender, "multiversx", fmt.Errorf("missing signature"))
 	}
 
 	// 3. Local Ed25519 Verification
@@ -48,45 +48,45 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 
 	// A. Construct Signable Message
 	txData := TransactionData{
-		Nonce:    payload.Data.Nonce,
-		Value:    payload.Data.Value,
-		Receiver: payload.Data.Receiver,
-		Sender:   payload.Data.Sender,
-		GasPrice: payload.Data.GasPrice,
-		GasLimit: payload.Data.GasLimit,
-		Data:     payload.Data.Data,
-		ChainID:  payload.Data.ChainID,
-		Version:  payload.Data.Version,
-		Options:  payload.Data.Options,
+		Nonce:    payload.Nonce,
+		Value:    payload.Value,
+		Receiver: payload.Receiver,
+		Sender:   payload.Sender,
+		GasPrice: payload.GasPrice,
+		GasLimit: payload.GasLimit,
+		Data:     payload.Data,
+		ChainID:  payload.ChainID,
+		Version:  payload.Version,
+		Options:  payload.Options,
 	}
 
 	msgBytes, err := SerializeTransaction(txData)
 	if err != nil {
 		// If serialization fails, maybe fallback to sim?
 		// But basic serialization shouldn't fail.
-		return false, x402.NewVerifyError("serialization_failed", payload.Data.Sender, "multiversx", err)
+		return false, x402.NewVerifyError("serialization_failed", payload.Sender, "multiversx", err)
 	}
 
 	// B. Verify Signature
 	// Decode Sender Bech32 -> PubKey
 	// address = hrp + pubkey
-	_, pubKeyBytes, err := DecodeBech32(payload.Data.Sender)
+	_, pubKeyBytes, err := DecodeBech32(payload.Sender)
 	if err != nil {
 		// Invalid sender address format
-		return false, x402.NewVerifyError("invalid_sender_address", payload.Data.Sender, "multiversx", err)
+		return false, x402.NewVerifyError("invalid_sender_address", payload.Sender, "multiversx", err)
 	}
 
-	sigBytes, err := hex.DecodeString(payload.Data.Signature)
+	sigBytes, err := hex.DecodeString(payload.Signature)
 	if err != nil {
-		return false, x402.NewVerifyError("invalid_signature_hex", payload.Data.Sender, "multiversx", err)
+		return false, x402.NewVerifyError("invalid_signature_hex", payload.Sender, "multiversx", err)
 	}
 
 	if len(sigBytes) != 64 {
-		return false, x402.NewVerifyError("invalid_signature_length", payload.Data.Sender, "multiversx", fmt.Errorf("expected 64 bytes, got %d", len(sigBytes)))
+		return false, x402.NewVerifyError("invalid_signature_length", payload.Sender, "multiversx", fmt.Errorf("expected 64 bytes, got %d", len(sigBytes)))
 	}
 
 	if len(pubKeyBytes) != 32 {
-		return false, x402.NewVerifyError("invalid_public_key_length", payload.Data.Sender, "multiversx", fmt.Errorf("expected 32 bytes, got %d", len(pubKeyBytes)))
+		return false, x402.NewVerifyError("invalid_public_key_length", payload.Sender, "multiversx", fmt.Errorf("expected 32 bytes, got %d", len(pubKeyBytes)))
 	}
 
 	if ed25519.Verify(pubKeyBytes, msgBytes, sigBytes) {
@@ -101,11 +101,11 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 
 	hash, err := simulator(payload)
 	if err != nil {
-		return false, x402.NewVerifyError("simulation_failed", payload.Data.Sender, "multiversx", err)
+		return false, x402.NewVerifyError("simulation_failed", payload.Sender, "multiversx", err)
 	}
 
 	if hash == "" {
-		return false, x402.NewVerifyError("simulation_returned_empty_hash", payload.Data.Sender, "multiversx", nil)
+		return false, x402.NewVerifyError("simulation_returned_empty_hash", payload.Sender, "multiversx", nil)
 	}
 
 	return true, nil

@@ -144,12 +144,12 @@ func TestFacilitatorVerify_ESDT_Success(t *testing.T) {
 	dataString := fmt.Sprintf("MultiESDTNFTTransfer@%s@01@%s@00@%s", payToHex, tokenHex, amountHex)
 
 	rp := multiversx.ExactRelayedPayload{}
-	rp.Data.Data = dataString
-	rp.Data.Value = "0"
-	rp.Data.Receiver = payTo // Must match PayTo
-	rp.Data.Sender = payTo   // Must be valid Bech32 (using Bob as sender for convenience)
+	rp.Data = dataString
+	rp.Value = "0"
+	rp.Receiver = payTo // Must match PayTo
+	rp.Sender = payTo   // Must be valid Bech32 (using Bob as sender for convenience)
 	// Must be valid hex (64 bytes)
-	rp.Data.Signature = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	rp.Signature = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
 
 	payloadBytes, _ := json.Marshal(rp)
 	var rpMap map[string]interface{}
@@ -199,11 +199,11 @@ func TestFacilitatorVerify_EGLD_Alias_MultiESDT(t *testing.T) {
 	dataString := fmt.Sprintf("MultiESDTNFTTransfer@%s@01@%s@00@%s", payToHex, tokenHex, amountHex)
 
 	rp := multiversx.ExactRelayedPayload{}
-	rp.Data.Data = dataString
-	rp.Data.Value = "0"
-	rp.Data.Receiver = payTo
-	rp.Data.Sender = payTo
-	rp.Data.Signature = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	rp.Data = dataString
+	rp.Value = "0"
+	rp.Receiver = payTo
+	rp.Sender = payTo
+	rp.Signature = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
 
 	payloadBytes, _ := json.Marshal(rp)
 	var rpMap map[string]interface{}

@@ -87,10 +87,6 @@ func (s *ExactMultiversXScheme) Scheme() string {
 	return multiversx.SchemeExact
 }
 
-func (s *ExactMultiversXScheme) GetSigners(ctx context.Context) ([]string, error) {
-	return []string{s.signer.Address()}, nil
-}
-
 func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requirements types.PaymentRequirements) (types.PaymentPayload, error) {
 	// 1. Validate inputs
 	if requirements.PayTo == "" {
@@ -229,21 +225,18 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 
 	// 6. Build Final Payload Map directly
 	finalMap := map[string]interface{}{
-		"scheme": multiversx.SchemeExact,
-		"data": map[string]interface{}{
-			"nonce":       txData.Nonce,
-			"value":       txData.Value,
-			"receiver":    txData.Receiver,
-			"sender":      txData.Sender,
-			"gasPrice":    txData.GasPrice,
-			"gasLimit":    txData.GasLimit,
-			"data":        txData.Data,
-			"chainID":     txData.ChainID,
-			"version":     txData.Version,
-			"signature":   hex.EncodeToString(sigBytes),
-			"validAfter":  validAfter,
-			"validBefore": validBefore,
-		},
+		"nonce":       txData.Nonce,
+		"value":       txData.Value,
+		"receiver":    txData.Receiver,
+		"sender":      txData.Sender,
+		"gasPrice":    txData.GasPrice,
+		"gasLimit":    txData.GasLimit,
+		"data":        txData.Data,
+		"chainID":     txData.ChainID,
+		"version":     txData.Version,
+		"signature":   hex.EncodeToString(sigBytes),
+		"validAfter":  validAfter,
+		"validBefore": validBefore,
 	}
 
 	return types.PaymentPayload{

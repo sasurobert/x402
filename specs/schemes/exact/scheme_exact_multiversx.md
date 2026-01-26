@@ -33,8 +33,8 @@ The `payload` field must contain the signed transaction components.
   "x402Version": 2,
   "resource": {
     "url": "https://api.example.com/premium-data",
-    "method": "GET",
-    "description": "Premium Market Data Feed"
+    "description": "Premium Market Data Feed",
+    "mimeType": "application/json"
   },
   "accepted": {
     "scheme": "exact",
@@ -55,7 +55,10 @@ The `payload` field must contain the signed transaction components.
     "gasLimit": 50000,
     "data": "pay@<resource_id_hex>",
     "chainID": "D",
-    "version": 1
+    "version": 1,
+    "signature": "...",
+    "validAfter": 1672531200,
+    "validBefore": 1672534800
   }
 }
 ```
@@ -86,11 +89,21 @@ The payload is similar, but the `data` field differs significantly to accommodat
 
 ```json
 {
-  // ... header info ...
+  "x402Version": 2,
+  "resource": {
+    "url": "https://api.example.com/premium-data",
+    "description": "Premium Market Data Feed",
+    "mimeType": "application/json"
+  },
   "accepted": {
+    "scheme": "exact",
+    "network": "multiversx:D",
     "amount": "1000000",
     "asset": "USDC-c70f1a",
-    // ...
+    "payTo": "erd1qqqqqqqq...",
+    "extra": {
+        "assetTransferMethod": "esdt"
+    }
   },
   "payload": {
     "nonce": 16,
@@ -101,7 +114,10 @@ The payload is similar, but the `data` field differs significantly to accommodat
     "gasLimit": 60000000, // Higher gas limit
     "data": "MultiESDTNFTTransfer@<dest_hex>@01@<token_hex>@00@<amount_hex>@pay@<resource_id_hex>",
     "chainID": "D",
-    "version": 1
+    "version": 1,
+    "signature": "...",
+    "validAfter": 1672531200,
+    "validBefore": 1672534800
   }
 }
 ```

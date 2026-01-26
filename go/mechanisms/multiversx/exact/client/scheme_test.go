@@ -63,20 +63,17 @@ func TestCreatePaymentPayload_EGLD(t *testing.T) {
 	var rp multiversx.ExactRelayedPayload
 	json.Unmarshal(dataBytes, &rp)
 
-	if rp.Scheme != multiversx.SchemeExact {
-		t.Errorf("Wrong scheme: %s", rp.Scheme)
+	if rp.Receiver != testPayTo {
+		t.Errorf("Wrong receiver: %s", rp.Receiver)
 	}
-	if rp.Data.Receiver != testPayTo {
-		t.Errorf("Wrong receiver: %s", rp.Data.Receiver)
+	if rp.Value != "100" {
+		t.Errorf("Wrong value: %s", rp.Value)
 	}
-	if rp.Data.Value != "100" {
-		t.Errorf("Wrong value: %s", rp.Data.Value)
+	if rp.Data != "" {
+		t.Errorf("Expected empty data for EGLD, got %s", rp.Data)
 	}
-	if rp.Data.Data != "" {
-		t.Errorf("Expected empty data for EGLD, got %s", rp.Data.Data)
-	}
-	if rp.Data.Nonce != 15 {
-		t.Errorf("Wrong nonce: %d", rp.Data.Nonce)
+	if rp.Nonce != 15 {
+		t.Errorf("Wrong nonce: %d", rp.Nonce)
 	}
 }
 
@@ -102,20 +99,20 @@ func TestCreatePaymentPayload_ESDT(t *testing.T) {
 	json.Unmarshal(dataBytes, &rp)
 
 	// ESDT check: Receiver should be Sender (Self-transfer)
-	if rp.Data.Receiver != testSender {
-		t.Errorf("ESDT tx receiver should be sender, got %s", rp.Data.Receiver)
+	if rp.Receiver != testSender {
+		t.Errorf("ESDT tx receiver should be sender, got %s", rp.Receiver)
 	}
-	if rp.Data.Value != "0" {
-		t.Errorf("ESDT tx value should be 0 EGLD, got %s", rp.Data.Value)
+	if rp.Value != "0" {
+		t.Errorf("ESDT tx value should be 0 EGLD, got %s", rp.Value)
 	}
 	// Check Nonce
-	if rp.Data.Nonce != 20 {
-		t.Errorf("Wrong nonce: %d", rp.Data.Nonce)
+	if rp.Nonce != 20 {
+		t.Errorf("Wrong nonce: %d", rp.Nonce)
 	}
 
 	// Check Data field contains "MultiESDTNFTTransfer"
-	if !strings.HasPrefix(rp.Data.Data, "MultiESDTNFTTransfer") {
-		t.Errorf("Data should start with MultiESDTNFTTransfer, got %s", rp.Data.Data)
+	if !strings.HasPrefix(rp.Data, "MultiESDTNFTTransfer") {
+		t.Errorf("Data should start with MultiESDTNFTTransfer, got %s", rp.Data)
 	}
 }
 
@@ -146,8 +143,8 @@ func TestCreatePaymentPayload_ESDT_WithResourceID(t *testing.T) {
 	// Check encoded resource ID "inv_123" -> hex "696e765f313233"
 	// Should be at the end
 	expectedRidHex := "696e765f313233"
-	if !strings.HasSuffix(rp.Data.Data, expectedRidHex) {
-		t.Errorf("Data should end with resourceId hex %s, got %s", expectedRidHex, rp.Data.Data)
+	if !strings.HasSuffix(rp.Data, expectedRidHex) {
+		t.Errorf("Data should end with resourceId hex %s, got %s", expectedRidHex, rp.Data)
 	}
 }
 
@@ -177,18 +174,18 @@ func TestCreatePaymentPayload_EGLD_Alias(t *testing.T) {
 
 	// Value should be 0 (Native EGLD not sent via Value field in MultiESDT usually, unless implied?)
 	// Actually, if using EGLD-000000 in MultiESDT, the 'value' of tx is 0, and amount is in data.
-	if rp.Data.Value != "0" {
-		t.Errorf("Value should be 0 for MultiESDT, got %s", rp.Data.Value)
+	if rp.Value != "0" {
+		t.Errorf("Value should be 0 for MultiESDT, got %s", rp.Value)
 	}
 
-	if !strings.HasPrefix(rp.Data.Data, "MultiESDTNFTTransfer") {
-		t.Errorf("Data should start with MultiESDTNFTTransfer, got %s", rp.Data.Data)
+	if !strings.HasPrefix(rp.Data, "MultiESDTNFTTransfer") {
+		t.Errorf("Data should start with MultiESDTNFTTransfer, got %s", rp.Data)
 	}
 
 	// Check token hex for EGLD-000000
 	// "EGLD-000000" -> 45474c442d303030303030
 	tokenHex := "45474c442d303030303030"
-	if !strings.Contains(rp.Data.Data, tokenHex) {
-		t.Errorf("Data should contain EGLD-000000 hex %s, got %s", tokenHex, rp.Data.Data)
+	if !strings.Contains(rp.Data, tokenHex) {
+		t.Errorf("Data should contain EGLD-000000 hex %s, got %s", tokenHex, rp.Data)
 	}
 }

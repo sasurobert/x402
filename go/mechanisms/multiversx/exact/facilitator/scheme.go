@@ -23,13 +23,26 @@ import (
 type ExactMultiversXScheme struct {
 	config multiversx.NetworkConfig
 	client *http.Client
+	signer multiversx.ClientMultiversXSigner
 }
 
-func NewExactMultiversXScheme(apiUrl string) *ExactMultiversXScheme {
-	return &ExactMultiversXScheme{
+type Option func(*ExactMultiversXScheme)
+
+func WithSigner(signer multiversx.ClientMultiversXSigner) Option {
+	return func(s *ExactMultiversXScheme) {
+		s.signer = signer
+	}
+}
+
+func NewExactMultiversXScheme(apiUrl string, opts ...Option) *ExactMultiversXScheme {
+	s := &ExactMultiversXScheme{
 		config: multiversx.NetworkConfig{APIUrl: apiUrl},
 		client: &http.Client{Timeout: 10 * time.Second},
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func (s *ExactMultiversXScheme) Scheme() string {
@@ -45,6 +58,9 @@ func (s *ExactMultiversXScheme) GetExtra(network x402.Network) map[string]interf
 }
 
 func (s *ExactMultiversXScheme) GetSigners(network x402.Network) []string {
+	if s.signer != nil {
+		return []string{s.signer.Address()}
+	}
 	return []string{}
 }
 
@@ -68,16 +84,16 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 		return nil, err // Returns invalid reason wrapped
 	}
 	if !isValid {
-		return nil, x402.NewVerifyError(x402.ErrCodeSignatureInvalid, relayedPayload.Data.Sender, "multiversx", nil)
+		return nil, x402.NewVerifyError(x402.ErrCodeSignatureInvalid, relayedPayload.Sender, "multiversx", nil)
 	}
 
 	// 2.1 Enforce Validity Windows
 	now := time.Now().Unix()
-	if relayedPayload.Data.ValidBefore > 0 && now > relayedPayload.Data.ValidBefore {
-		return nil, fmt.Errorf("payment expired (validBefore: %d, now: %d)", relayedPayload.Data.ValidBefore, now)
+	if relayedPayload.ValidBefore > 0 && now > relayedPayload.ValidBefore {
+		return nil, fmt.Errorf("payment expired (validBefore: %d, now: %d)", relayedPayload.ValidBefore, now)
 	}
-	if relayedPayload.Data.ValidAfter > 0 && now < relayedPayload.Data.ValidAfter {
-		return nil, fmt.Errorf("payment not yet valid (validAfter: %d, now: %d)", relayedPayload.Data.ValidAfter, now)
+	if relayedPayload.ValidAfter > 0 && now < relayedPayload.ValidAfter {
+		return nil, fmt.Errorf("payment not yet valid (validAfter: %d, now: %d)", relayedPayload.ValidAfter, now)
 	}
 
 	// 3. Validate Requirements (Specific Fields)
@@ -92,19 +108,18 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 		reqAsset = "EGLD"
 	}
 
-	txData := relayedPayload.Data
-
+	// Use relayedPayload directly as it is now flat (matches spec)
 	if reqAsset == "EGLD" {
 		// Case A: Direct EGLD
-		if txData.Receiver != expectedReceiver {
-			return nil, fmt.Errorf("receiver mismatch: expected %s, got %s", expectedReceiver, txData.Receiver)
+		if relayedPayload.Receiver != expectedReceiver {
+			return nil, fmt.Errorf("receiver mismatch: expected %s, got %s", expectedReceiver, relayedPayload.Receiver)
 		}
-		if !multiversx.CheckBigInt(txData.Value, expectedAmount) {
-			return nil, fmt.Errorf("amount mismatch: expected %s, got %s", expectedAmount, txData.Value)
+		if !multiversx.CheckBigInt(relayedPayload.Value, expectedAmount) {
+			return nil, fmt.Errorf("amount mismatch: expected %s, got %s", expectedAmount, relayedPayload.Value)
 		}
 	} else {
 		// Case B: ESDT Transfer
-		parts := strings.Split(txData.Data, "@")
+		parts := strings.Split(relayedPayload.Data, "@")
 		if len(parts) < 6 || parts[0] != "MultiESDTNFTTransfer" {
 			return nil, errors.New("invalid ESDT transfer data format")
 		}
@@ -184,17 +199,17 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 		Version   uint32 `json:"version"`
 		Options   uint32 `json:"options,omitempty"`
 	}{
-		Nonce:     relayedPayload.Data.Nonce,
-		Value:     relayedPayload.Data.Value,
-		Receiver:  relayedPayload.Data.Receiver,
-		Sender:    relayedPayload.Data.Sender,
-		GasPrice:  relayedPayload.Data.GasPrice,
-		GasLimit:  relayedPayload.Data.GasLimit,
-		Data:      base64.StdEncoding.EncodeToString([]byte(relayedPayload.Data.Data)),
-		Signature: relayedPayload.Data.Signature,
-		ChainID:   relayedPayload.Data.ChainID,
-		Version:   relayedPayload.Data.Version,
-		Options:   relayedPayload.Data.Options,
+		Nonce:     relayedPayload.Nonce,
+		Value:     relayedPayload.Value,
+		Receiver:  relayedPayload.Receiver,
+		Sender:    relayedPayload.Sender,
+		GasPrice:  relayedPayload.GasPrice,
+		GasLimit:  relayedPayload.GasLimit,
+		Data:      base64.StdEncoding.EncodeToString([]byte(relayedPayload.Data)),
+		Signature: relayedPayload.Signature,
+		ChainID:   relayedPayload.ChainID,
+		Version:   relayedPayload.Version,
+		Options:   relayedPayload.Options,
 	}
 
 	// 3. Broadcast to /transaction/send
@@ -206,7 +221,7 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 	url := fmt.Sprintf("%s/transaction/send", s.config.APIUrl)
 	resp, err := s.client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return nil, x402.NewSettleError("broadcast_failed", relayedPayload.Data.Sender, "multiversx", "", err)
+		return nil, x402.NewSettleError("broadcast_failed", relayedPayload.Sender, "multiversx", "", err)
 	}
 	defer resp.Body.Close()
 
@@ -228,28 +243,87 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 	}
 
 	if txResp.Error != "" {
-		return nil, x402.NewSettleError("node_error", relayedPayload.Data.Sender, "multiversx", "", fmt.Errorf("%s", txResp.Error))
+		return nil, x402.NewSettleError("node_error", relayedPayload.Sender, "multiversx", "", fmt.Errorf("%s", txResp.Error))
+	}
+
+	// Poll for confirmation
+	txHash := txResp.Data.TxHash
+	if err := s.waitForTransaction(ctx, txHash); err != nil {
+		return nil, x402.NewSettleError("tx_failed", relayedPayload.Sender, "multiversx", "", err)
 	}
 
 	return &x402.SettleResponse{
 		Success:     true,
-		Transaction: txResp.Data.TxHash,
+		Transaction: txHash,
 	}, nil
+}
+
+func (s *ExactMultiversXScheme) waitForTransaction(ctx context.Context, txHash string) error {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	timeout := time.After(60 * time.Second) // 1 minute timeout
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for tx %s", txHash)
+		case <-ticker.C:
+			status, err := s.getTransactionStatus(txHash)
+			if err != nil {
+				// log warning? keep retrying
+				continue
+			}
+			if status == "success" {
+				return nil
+			}
+			if status == "fail" || status == "invalid" {
+				return fmt.Errorf("transaction failed with status: %s", status)
+			}
+			// pending, keep waiting
+		}
+	}
+}
+
+func (s *ExactMultiversXScheme) getTransactionStatus(txHash string) (string, error) {
+	url := fmt.Sprintf("%s/transactions/%s", s.config.APIUrl, txHash)
+	resp, err := s.client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API error: %d", resp.StatusCode)
+	}
+
+	var txStatusResp struct {
+		Data struct {
+			Transaction struct {
+				Status string `json:"status"`
+			} `json:"transaction"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&txStatusResp); err != nil {
+		return "", err
+	}
+	return txStatusResp.Data.Transaction.Status, nil
 }
 
 func (s *ExactMultiversXScheme) verifyViaSimulation(payload multiversx.ExactRelayedPayload) (string, error) {
 	reqBody := multiversx.SimulationRequest{
-		Nonce:     payload.Data.Nonce,
-		Value:     payload.Data.Value,
-		Receiver:  payload.Data.Receiver,
-		Sender:    payload.Data.Sender,
-		GasPrice:  payload.Data.GasPrice,
-		GasLimit:  payload.Data.GasLimit,
-		Data:      base64.StdEncoding.EncodeToString([]byte(payload.Data.Data)),
-		ChainID:   payload.Data.ChainID,
-		Version:   payload.Data.Version,
-		Options:   payload.Data.Options,
-		Signature: payload.Data.Signature,
+		Nonce:     payload.Nonce,
+		Value:     payload.Value,
+		Receiver:  payload.Receiver,
+		Sender:    payload.Sender,
+		GasPrice:  payload.GasPrice,
+		GasLimit:  payload.GasLimit,
+		Data:      base64.StdEncoding.EncodeToString([]byte(payload.Data)),
+		ChainID:   payload.ChainID,
+		Version:   payload.Version,
+		Options:   payload.Options,
+		Signature: payload.Signature,
 	}
 
 	jsonBody, err := json.Marshal(reqBody)

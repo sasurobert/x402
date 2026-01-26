@@ -31,35 +31,35 @@ func TestVerifyPayment(t *testing.T) {
 
 	// 3. Setup Payload
 	payload := ExactRelayedPayload{}
-	payload.Data.Nonce = 1
-	payload.Data.Value = "0"
-	payload.Data.Receiver = "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx"
-	payload.Data.Sender = senderBech32
-	payload.Data.GasPrice = 1000000000
-	payload.Data.GasLimit = 50000
-	payload.Data.Data = "test"
-	payload.Data.ChainID = "D"
-	payload.Data.Version = 1
-	payload.Data.Options = 0
+	payload.Nonce = 1
+	payload.Value = "0"
+	payload.Receiver = "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx"
+	payload.Sender = senderBech32
+	payload.GasPrice = 1000000000
+	payload.GasLimit = 50000
+	payload.Data = "test"
+	payload.ChainID = "D"
+	payload.Version = 1
+	payload.Options = 0
 
 	// 4. Sign locally
 	txMap := map[string]interface{}{
-		"nonce":    payload.Data.Nonce,
-		"value":    payload.Data.Value,
-		"receiver": payload.Data.Receiver,
-		"sender":   payload.Data.Sender,
-		"gasPrice": payload.Data.GasPrice,
-		"gasLimit": payload.Data.GasLimit,
-		"data":     payload.Data.Data,
-		"chainID":  payload.Data.ChainID,
-		"version":  payload.Data.Version,
-		"options":  payload.Data.Options,
+		"nonce":    payload.Nonce,
+		"value":    payload.Value,
+		"receiver": payload.Receiver,
+		"sender":   payload.Sender,
+		"gasPrice": payload.GasPrice,
+		"gasLimit": payload.GasLimit,
+		"data":     payload.Data,
+		"chainID":  payload.ChainID,
+		"version":  payload.Version,
+		"options":  payload.Options,
 	}
 
 	txBytes, _ := json.Marshal(txMap)
 
 	sig := ed25519.Sign(privKey, txBytes)
-	payload.Data.Signature = hex.EncodeToString(sig)
+	payload.Signature = hex.EncodeToString(sig)
 
 	req := types.PaymentRequirements{
 		PayTo: "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx",
@@ -79,7 +79,7 @@ func TestVerifyPayment(t *testing.T) {
 	}
 
 	// Test Bad Sig
-	payload.Data.Signature = hex.EncodeToString(make([]byte, 64)) // invalid
+	payload.Signature = hex.EncodeToString(make([]byte, 64)) // invalid
 	valid, err = VerifyPayment(context.Background(), payload, req, func(p ExactRelayedPayload) (string, error) {
 		return "", errors.New("sim fail")
 	})

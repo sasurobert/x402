@@ -66,6 +66,98 @@ type ExactRelayedPayload struct {
 	ValidBefore uint64 `json:"validBefore,omitempty"` // Timestamp/Nonce
 }
 
+// ToMap converts the payload to a map for JSON marshaling
+func (p *ExactRelayedPayload) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"nonce":       p.Nonce,
+		"value":       p.Value,
+		"receiver":    p.Receiver,
+		"sender":      p.Sender,
+		"gasPrice":    p.GasPrice,
+		"gasLimit":    p.GasLimit,
+		"data":        p.Data,
+		"chainID":     p.ChainID,
+		"version":     p.Version,
+		"options":     p.Options,
+		"signature":   p.Signature,
+		"validAfter":  p.ValidAfter,
+		"validBefore": p.ValidBefore,
+	}
+}
+
+// PayloadFromMap creates an ExactRelayedPayload from a map
+func PayloadFromMap(data map[string]interface{}) (*ExactRelayedPayload, error) {
+	p := &ExactRelayedPayload{}
+
+	if val, ok := data["nonce"].(uint64); ok {
+		p.Nonce = val
+	} else if val, ok := data["nonce"].(float64); ok {
+		p.Nonce = uint64(val)
+	}
+
+	if val, ok := data["value"].(string); ok {
+		p.Value = val
+	}
+
+	if val, ok := data["receiver"].(string); ok {
+		p.Receiver = val
+	}
+
+	if val, ok := data["sender"].(string); ok {
+		p.Sender = val
+	}
+
+	if val, ok := data["gasPrice"].(uint64); ok {
+		p.GasPrice = val
+	} else if val, ok := data["gasPrice"].(float64); ok {
+		p.GasPrice = uint64(val)
+	}
+
+	if val, ok := data["gasLimit"].(uint64); ok {
+		p.GasLimit = val
+	} else if val, ok := data["gasLimit"].(float64); ok {
+		p.GasLimit = uint64(val)
+	}
+
+	if val, ok := data["data"].(string); ok {
+		p.Data = val
+	}
+
+	if val, ok := data["chainID"].(string); ok {
+		p.ChainID = val
+	}
+
+	if val, ok := data["version"].(uint32); ok {
+		p.Version = val
+	} else if val, ok := data["version"].(float64); ok {
+		p.Version = uint32(val)
+	}
+
+	if val, ok := data["options"].(uint32); ok {
+		p.Options = val
+	} else if val, ok := data["options"].(float64); ok {
+		p.Options = uint32(val)
+	}
+
+	if val, ok := data["signature"].(string); ok {
+		p.Signature = val
+	}
+
+	if val, ok := data["validAfter"].(uint64); ok {
+		p.ValidAfter = val
+	} else if val, ok := data["validAfter"].(float64); ok {
+		p.ValidAfter = uint64(val)
+	}
+
+	if val, ok := data["validBefore"].(uint64); ok {
+		p.ValidBefore = val
+	} else if val, ok := data["validBefore"].(float64); ok {
+		p.ValidBefore = uint64(val)
+	}
+
+	return p, nil
+}
+
 // ToTransaction converts the payload to an SDK Transaction struct
 // Since ExactRelayedPayload uses string for Data, we convert it to []byte
 // Note: Signature is also populated if present

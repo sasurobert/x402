@@ -68,14 +68,11 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 	// 1. Unmarshal directly to ExactRelayedPayload using json mapping
 	// Optimization: Avoid double marshal/unmarshal if possible, but map->struct usually requires it or mapstructure.
 	// Using generic JSON roundtrip for simplicity and correctness with struct tags.
-	var relayedPayload multiversx.ExactRelayedPayload
-	payloadBytes, err := json.Marshal(payload.Payload)
+	relayedPayloadPtr, err := multiversx.PayloadFromMap(payload.Payload)
 	if err != nil {
-		return nil, fmt.Errorf("payload marshal failed: %w", err)
-	}
-	if err := json.Unmarshal(payloadBytes, &relayedPayload); err != nil {
 		return nil, x402.NewVerifyError(x402.ErrCodeInvalidPayment, "", "multiversx", fmt.Errorf("invalid payload format: %v", err))
 	}
+	relayedPayload := *relayedPayloadPtr
 
 	// 2. Perform Verification using Universal logic
 	isValid, err := multiversx.VerifyPayment(ctx, relayedPayload, requirements, s.verifyViaSimulation)
@@ -175,14 +172,11 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 
 func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.PaymentPayload, requirements types.PaymentRequirements) (*x402.SettleResponse, error) {
 	// 1. Recover RelayedPayload
-	var relayedPayload multiversx.ExactRelayedPayload
-	payloadBytes, err := json.Marshal(payload.Payload) // Optimization: type assertion if possible
+	relayedPayloadPtr, err := multiversx.PayloadFromMap(payload.Payload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal failed: %w", err)
-	}
-	if err := json.Unmarshal(payloadBytes, &relayedPayload); err != nil {
 		return nil, x402.NewSettleError("invalid_payload", "", "multiversx", "", err)
 	}
+	relayedPayload := *relayedPayloadPtr
 
 	// 2. Prepare Transaction
 	tx := relayedPayload.ToTransaction()

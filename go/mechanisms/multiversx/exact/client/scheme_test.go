@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -98,9 +97,11 @@ func TestCreatePaymentPayload_EGLD(t *testing.T) {
 	}
 
 	// Verify structure
-	dataBytes, _ := json.Marshal(payload.Payload)
-	var rp multiversx.ExactRelayedPayload
-	json.Unmarshal(dataBytes, &rp)
+	rpPtr, err := multiversx.PayloadFromMap(payload.Payload)
+	if err != nil {
+		t.Fatalf("Failed to parse payload: %v", err)
+	}
+	rp := *rpPtr
 
 	if rp.Receiver != testPayTo {
 		t.Errorf("Wrong receiver: %s", rp.Receiver)
@@ -133,9 +134,11 @@ func TestCreatePaymentPayload_ESDT(t *testing.T) {
 		t.Fatalf("Failed to create payload: %v", err)
 	}
 
-	dataBytes, _ := json.Marshal(payload.Payload)
-	var rp multiversx.ExactRelayedPayload
-	json.Unmarshal(dataBytes, &rp)
+	rpPtr, err := multiversx.PayloadFromMap(payload.Payload)
+	if err != nil {
+		t.Fatalf("Failed to parse payload: %v", err)
+	}
+	rp := *rpPtr
 
 	// ESDT check: Receiver should be Sender (Self-transfer)
 	if rp.Receiver != testSender {
@@ -175,9 +178,11 @@ func TestCreatePaymentPayload_ESDT_WithResourceID(t *testing.T) {
 		t.Fatalf("Failed to create payload: %v", err)
 	}
 
-	dataBytes, _ := json.Marshal(payload.Payload)
-	var rp multiversx.ExactRelayedPayload
-	json.Unmarshal(dataBytes, &rp)
+	rpPtr, err := multiversx.PayloadFromMap(payload.Payload)
+	if err != nil {
+		t.Fatalf("Failed to parse payload: %v", err)
+	}
+	rp := *rpPtr
 
 	// Check encoded resource ID "inv_123" -> hex "696e765f313233"
 	// Should be at the end
@@ -204,9 +209,11 @@ func TestCreatePaymentPayload_EGLD_Alias(t *testing.T) {
 		t.Fatalf("Failed to create payload: %v", err)
 	}
 
-	dataBytes, _ := json.Marshal(payload.Payload)
-	var rp multiversx.ExactRelayedPayload
-	json.Unmarshal(dataBytes, &rp)
+	rpPtr, err := multiversx.PayloadFromMap(payload.Payload)
+	if err != nil {
+		t.Fatalf("Failed to parse payload: %v", err)
+	}
+	rp := *rpPtr
 
 	// Should be ESDT transfer (MultiESDTNFTTransfer)
 	// Because we treat EGLD-000000 as a token identifier for MultiESDT.

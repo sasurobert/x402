@@ -251,14 +251,7 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 
 	// 6. Build Final Payload Map
 	// Marshalling the struct ensures we match the JSON tags defined in types.go
-	finalBytes, err := json.Marshal(txData)
-	if err != nil {
-		return types.PaymentPayload{}, err
-	}
-	var finalMap map[string]interface{}
-	if err := json.Unmarshal(finalBytes, &finalMap); err != nil {
-		return types.PaymentPayload{}, err
-	}
+	finalMap := txData.ToMap()
 
 	return types.PaymentPayload{
 		X402Version: 2,

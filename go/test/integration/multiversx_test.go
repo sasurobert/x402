@@ -40,7 +40,8 @@ func NewRealSigner(privKeyHex string) (*RealSigner, error) {
 
 	// Derive Address from Public Key
 	pubKey := privKey.Public().(ed25519.PublicKey)
-	address, err := multiversx.EncodeBech32("erd", pubKey)
+	addressHandler := data.NewAddressFromBytes(pubKey)
+	address, err := addressHandler.AddressAsBech32String()
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode address: %v", err)
 	}
@@ -176,11 +177,11 @@ func TestFacilitatorVerify_ESDT_Success(t *testing.T) {
 
 	// Use Real Bech32 Address (Bob) for Strict Verification
 	payTo := "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx"
-	_, pubBytes, err := multiversx.DecodeBech32(payTo)
+	payToAddr, err := data.NewAddressFromBech32String(payTo)
 	if err != nil {
 		t.Fatalf("Failed to decode test address: %v", err)
 	}
-	payToHex := hex.EncodeToString(pubBytes)
+	payToHex := hex.EncodeToString(payToAddr.AddressBytes())
 
 	// Token: USDC-123 -> hex ("555344432d313233")
 	tokenHex := hex.EncodeToString([]byte("USDC-123"))
@@ -241,8 +242,8 @@ func TestFacilitatorVerify_EGLD_Alias_MultiESDT(t *testing.T) {
 
 	// PayTo: Bob
 	payTo := "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx"
-	_, pubBytes, _ := multiversx.DecodeBech32(payTo)
-	payToHex := hex.EncodeToString(pubBytes)
+	payToAddr, _ := data.NewAddressFromBech32String(payTo)
+	payToHex := hex.EncodeToString(payToAddr.AddressBytes())
 
 	// Token: EGLD-000000
 	// hex("EGLD-000000") = 45474c442d303030303030

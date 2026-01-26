@@ -7,6 +7,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/multiversx/mx-sdk-go/data"
+
 	x402 "github.com/coinbase/x402/go"
 	"github.com/coinbase/x402/go/types"
 )
@@ -20,7 +22,8 @@ func TestVerifyPayment(t *testing.T) {
 	}
 
 	// Create Sender Address
-	senderBech32, err := EncodeBech32("erd", pubKey)
+	senderAddr := data.NewAddressFromBytes(pubKey)
+	senderBech32, err := senderAddr.AddressAsBech32String()
 	if err != nil {
 		t.Fatalf("Failed to encode address: %v", err)
 	}

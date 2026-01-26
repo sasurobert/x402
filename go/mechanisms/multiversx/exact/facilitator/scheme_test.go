@@ -33,7 +33,8 @@ func TestVerify_EGLD_Direct_Success(t *testing.T) {
 
 	// Keys
 	pubKey, privKey, _ := ed25519.GenerateKey(nil)
-	senderAddr, _ := multiversx.EncodeBech32("erd", pubKey)
+	// Create Sender Address
+	senderAddr, _ := data.NewAddressFromBytes(pubKey).AddressAsBech32String()
 
 	// Payload
 	payload := multiversx.ExactRelayedPayload{
@@ -87,7 +88,8 @@ func TestVerify_AssetMismatch(t *testing.T) {
 	scheme := NewExactMultiversXScheme(server.URL)
 
 	pubKey, privKey, _ := ed25519.GenerateKey(nil)
-	senderAddr, _ := multiversx.EncodeBech32("erd", pubKey)
+	// Create Sender Address
+	senderAddr, _ := data.NewAddressFromBytes(pubKey).AddressAsBech32String()
 
 	payload := multiversx.ExactRelayedPayload{
 		Nonce:    1,

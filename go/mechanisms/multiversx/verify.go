@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/multiversx/mx-sdk-go/data"
+
 	x402 "github.com/coinbase/x402/go"
 	"github.com/coinbase/x402/go/types"
 )
@@ -36,10 +38,11 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 
 	// B. Verify Signature
 	// Decode Sender Bech32 -> PubKey
-	_, pubKeyBytes, err := DecodeBech32(payload.Sender)
+	addr, err := data.NewAddressFromBech32String(payload.Sender)
 	if err != nil {
 		return false, x402.NewVerifyError("invalid_sender_address", payload.Sender, "multiversx", err)
 	}
+	pubKeyBytes := addr.AddressBytes()
 
 	sigBytes, err := hex.DecodeString(payload.Signature)
 	if err != nil {

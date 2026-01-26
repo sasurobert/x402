@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/multiversx/mx-chain-core-go/data/transaction"
+	"github.com/multiversx/mx-sdk-go/data"
 )
 
 var tokenIDRegex = regexp.MustCompile(`^[A-Z0-9]{3,8}-[0-9a-fA-F]{6}$`)
@@ -63,16 +64,8 @@ func IsValidAddress(address string) bool {
 		return false
 	}
 
-	hrp, _, err := DecodeBech32(address)
-	if err != nil {
-		return false
-	}
-
-	if hrp != "erd" {
-		return false
-	}
-
-	return true
+	_, err := data.NewAddressFromBech32String(address)
+	return err == nil
 }
 
 // IsValidHex checks if string is valid hex

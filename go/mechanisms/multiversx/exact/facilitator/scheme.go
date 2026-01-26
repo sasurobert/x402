@@ -16,6 +16,7 @@ import (
 	"github.com/multiversx/mx-chain-core-go/data/transaction"
 	"github.com/multiversx/mx-sdk-go/blockchain"
 	"github.com/multiversx/mx-sdk-go/core"
+	"github.com/multiversx/mx-sdk-go/data"
 
 	"github.com/coinbase/x402/go/mechanisms/multiversx"
 
@@ -125,11 +126,11 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 			return nil, fmt.Errorf("invalid receiver hex")
 		}
 
-		_, pubKeyBytes, err := multiversx.DecodeBech32(expectedReceiver)
+		expectedAddr, err := data.NewAddressFromBech32String(expectedReceiver)
 		if err != nil {
 			return nil, fmt.Errorf("invalid expected receiver format: %v", err)
 		}
-		expectedHex := hex.EncodeToString(pubKeyBytes)
+		expectedHex := hex.EncodeToString(expectedAddr.AddressBytes())
 
 		if destHex != expectedHex {
 			return nil, fmt.Errorf("receiver mismatch: encoded destination %s does not match requirement %s", destHex, expectedReceiver)

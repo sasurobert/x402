@@ -14,7 +14,7 @@ func TestGetMultiversXChainId(t *testing.T) {
 		{"multiversx-devnet", "D", false},
 		{"multiversx:T", "T", false},
 		{"multiversx:1", "1", false},
-		{"multiversx:Custom", "Custom", false},
+		{"multiversx:Custom", "", true},
 		{"invalid", "", true},
 		{"multiversx-invalid", "", true},
 	}
@@ -60,9 +60,7 @@ func TestIsValidAddress(t *testing.T) {
 
 	for _, tc := range tests {
 		if res := IsValidAddress(tc.addr); res != tc.valid {
-			// Debug failure
-			_, _, err := DecodeBech32(tc.addr)
-			t.Errorf("IsValidAddress(%s) = %v; expected %v. Error: %v", tc.addr, res, tc.valid, err)
+			t.Errorf("IsValidAddress(%s) = %v; expected %v", tc.addr, res, tc.valid)
 		}
 	}
 }

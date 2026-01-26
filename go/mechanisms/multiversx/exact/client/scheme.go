@@ -81,7 +81,7 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 		return types.PaymentPayload{}, fmt.Errorf("PayTo is required")
 	}
 
-	if _, _, err := multiversx.DecodeBech32(requirements.PayTo); err != nil {
+	if _, err := data.NewAddressFromBech32String(requirements.PayTo); err != nil {
 		return types.PaymentPayload{}, fmt.Errorf("invalid PayTo address (must be valid Bech32): %w", err)
 	}
 
@@ -133,8 +133,8 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 		value = "0"
 		gasLimit = uint64(multiversx.GasLimitESDT)
 
-		_, decodedBytes, _ := multiversx.DecodeBech32(requirements.PayTo)
-		destHex := hex.EncodeToString(decodedBytes)
+		payToAddr, _ := data.NewAddressFromBech32String(requirements.PayTo)
+		destHex := hex.EncodeToString(payToAddr.AddressBytes())
 
 		tokenHex := hex.EncodeToString([]byte(asset))
 

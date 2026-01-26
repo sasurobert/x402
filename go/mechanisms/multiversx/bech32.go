@@ -39,9 +39,7 @@ func bech32VerifyChecksum(hrp string, data []int) bool {
 	return bech32Polymod(append(bech32HrpExpand(hrp), data...)) == 1
 }
 
-// EncodeBech32 encodes a byte slice into a bech32 string with the given HRP
 func EncodeBech32(hrp string, data []byte) (string, error) {
-	// Convert 8-bit to 5-bit
 	converted, err := convertBits(intSlice(data), 8, 5, true)
 	if err != nil {
 		return "", err
@@ -58,20 +56,7 @@ func bech32Encode(hrp string, data []byte) string {
 	var sb strings.Builder
 	sb.WriteString(hrp)
 	sb.WriteString("1")
-	// The combined part is used for checksum, but string encoding uses 5-bit mapped to charset
-	// The data+checksum part needs to be mapped.
-	// We need 5-bit values for data+checksum.
-	// intSlice(data) is already 5-bit hopefully? No, EncodeBech32 converts it.
-	// But bech32Encode receives 'data' which is 'converted'. Yes.
-
 	values := intSlice(data)
-	// Append checksum to values
-	// wait, checksum is calculated using hrp+values.
-	// The output string is hrp + '1' + mapped(values) + mapped(checksum)
-
-	// Re-calculating checksum here just to be safe it flows correctly from `EncodeBech32`
-	// but `bech32Encode` signature is `data []byte`.
-
 	for _, v := range values {
 		sb.WriteByte(charset[v])
 	}
@@ -88,7 +73,6 @@ func DecodeBech32(bech string) (string, []byte, error) {
 	}
 
 	if strings.ToLower(bech) != bech && strings.ToUpper(bech) != bech {
-		// Mixed case invalid
 	}
 	bechLower := strings.ToLower(bech)
 

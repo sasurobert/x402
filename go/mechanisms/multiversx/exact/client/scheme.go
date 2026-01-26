@@ -22,7 +22,7 @@ import (
 // ExactMultiversXScheme implements SchemeNetworkClient
 type ExactMultiversXScheme struct {
 	signer multiversx.ClientMultiversXSigner
-	proxy  blockchain.Proxy // Use official SDK proxy interface
+	proxy  blockchain.Proxy
 }
 
 // Option defines functional options for ExactMultiversXScheme
@@ -49,17 +49,14 @@ func (s *ExactMultiversXScheme) Scheme() string {
 }
 
 func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requirements types.PaymentRequirements) (types.PaymentPayload, error) {
-	// 1. Validate inputs
 	if requirements.PayTo == "" {
 		return types.PaymentPayload{}, fmt.Errorf("PayTo is required")
 	}
 
-	// STRICT VERIFICATION: PayTo must be a valid Bech32 address
 	if _, _, err := multiversx.DecodeBech32(requirements.PayTo); err != nil {
 		return types.PaymentPayload{}, fmt.Errorf("invalid PayTo address (must be valid Bech32): %w", err)
 	}
 
-	// 2. Prepare Transaction Data
 	gasLimit := uint64(multiversx.GasLimitStandard)
 	if gl, ok := requirements.Extra["gasLimit"].(float64); ok {
 		gasLimit = uint64(gl)
@@ -71,7 +68,6 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 	version := uint32(1)
 	chainID := multiversx.ChainIDMainnet
 
-	// Resolve Network/ChainID/API
 	if requirements.Network != "" {
 		parts := strings.Split(string(requirements.Network), ":")
 		if len(parts) > 1 {
@@ -85,7 +81,6 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 	value := requirements.Amount
 	dataString := ""
 
-	// Init Proxy if not provided
 	if s.proxy == nil {
 		args := blockchain.ArgsProxy{
 			ProxyURL:            apiURL,
@@ -103,7 +98,6 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 		}
 	}
 
-	// FETCH NONCE
 	senderAddr, err := data.NewAddressFromBech32String(sender)
 	if err != nil {
 		return types.PaymentPayload{}, fmt.Errorf("invalid sender address: %w", err)
@@ -114,16 +108,13 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 	}
 	nonce := account.Nonce
 
-	// ESDT / Token Logic
 	asset := requirements.Asset
 	if asset == "" {
 		return types.PaymentPayload{}, fmt.Errorf("asset is required")
 	}
 
 	if asset != multiversx.NativeTokenTicker {
-		// ESDT Transfer
-		// Standard is MultiESDTNFTTransfer for 1 or more tokens, or usually just 1 here.
-		receiver = sender // For MultiESDTNFTTransfer, we send to self, the "real" destination is in data
+		receiver = sender
 		value = "0"
 		gasLimit = uint64(multiversx.GasLimitESDT)
 
@@ -141,14 +132,11 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 			amtHex = "0" + amtHex
 		}
 
-		// Resource ID / Extra Args
 		var resourceIdHex string
 		if rid, ok := requirements.Extra["resourceId"].(string); ok && rid != "" {
 			resourceIdHex = hex.EncodeToString([]byte(rid))
 		}
 
-		// Complex SC Arguments List (e.g. for SC calls alongside payment)
-		// Format: list of hex strings
 		var extraArgs []string
 		if argsInterface, ok := requirements.Extra["arguments"].([]interface{}); ok {
 			for _, arg := range argsInterface {
@@ -158,12 +146,9 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 			}
 		}
 
-		// Construct Data Payload
-		// Format: MultiESDTNFTTransfer @ DestHex @ NumTokens(01) @ TokenIDHex @ Nonce(00) @ AmountHex @ FunctionHex(Optional) @ Args...
 		baseData := fmt.Sprintf("MultiESDTNFTTransfer@%s@01@%s@00@%s", destHex, tokenHex, amtHex)
 
 		if resourceIdHex != "" {
-			// If resourceId is present, we assume it's the function name to call on receiver
 			baseData += "@" + resourceIdHex
 		}
 
@@ -174,18 +159,10 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 		dataString = baseData
 
 	} else {
-		// EGLD Transfer
-		// If "direct", it's a simple move balance.
-		// If there is a resourceID, it might be a SC call "pay@..." or just "pay"
-		// If arguments exist, we append them.
 		if rid, ok := requirements.Extra["resourceId"].(string); ok && rid != "" {
-			dataString = hex.EncodeToString([]byte(rid)) // Function name usually? Or raw string?
-			// Spec says "pay@<resource_id_hex>" in comments usually, but here we construct it.
-			// Let's assume resourceId IS the function name (e.g. "pay") or the unique ID.
-			// If it's a SC call, typically "funcName@arg1@arg2".
+			dataString = hex.EncodeToString([]byte(rid))
 		}
 
-		// If arguments exist, append them
 		if argsInterface, ok := requirements.Extra["arguments"].([]interface{}); ok {
 			var extraArgs []string
 			for _, arg := range argsInterface {
@@ -195,8 +172,6 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 			}
 			if len(extraArgs) > 0 {
 				if dataString == "" {
-					// If no function name but args? Weird for EGLD transfer unless "deposit" implied?
-					// Keep simple: if args exist but no dataString, assume just args (rare)
 					dataString = strings.Join(extraArgs, "@")
 				} else {
 					dataString += "@" + strings.Join(extraArgs, "@")
@@ -205,7 +180,6 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 		}
 	}
 
-	// 3. Construct Payload Object
 	now := time.Now().Unix()
 	validAfter := uint64(now - 600)
 	validBefore := uint64(now + int64(requirements.MaxTimeoutSeconds))
@@ -232,25 +206,18 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 		ValidBefore: validBefore,
 	}
 
-	// 4. Serialize for Signing
-	// Use SDK Transaction conversion to get bytes or use canonicalizer
-	// But we need to sign the *Transaction*, not the RelayedPayload wrapper yet.
 	sdkTx := txData.ToTransaction()
-	// NOTE: SDK SerializeTransaction is correct for signing
 	txBytes, err := s.serializeTxForSigning(sdkTx)
 	if err != nil {
 		return types.PaymentPayload{}, err
 	}
 
-	// 5. Sign
 	sigBytes, err := s.signer.Sign(ctx, txBytes)
 	if err != nil {
 		return types.PaymentPayload{}, err
 	}
 	txData.Signature = hex.EncodeToString(sigBytes)
 
-	// 6. Build Final Payload Map
-	// Marshalling the struct ensures we match the JSON tags defined in types.go
 	finalMap := txData.ToMap()
 
 	return types.PaymentPayload{
@@ -259,19 +226,6 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 	}, nil
 }
 
-// serializeTxForSigning mimics the SDK's serialization for signing (which is JSON in MX)
-// or just uses the SDK's internal mechanisms if exposed.
-// Since we imported data.Transaction, we might need a serializer.
-// `core` has generic serializers but proper TX serialization is specific.
-// We'll use a local helper using standard library that matches MX-Chain-Go logic usually.
 func (s *ExactMultiversXScheme) serializeTxForSigning(tx transaction.FrontendTransaction) ([]byte, error) {
-	// Simple Canonical JSON for signing:
-	// Format: {"chainID":"...","data":"...","gasLimit":...,"gasPrice":...,"nonce":...,"receiver":"...","sender":"...","value":"...","version":...}
-	// Sorted keys.
-	// SDK go has `MarshalTransaction` in some versions, or we can use generic json marshal
-	// BUT MX requires specific field ordering for signing hash usually?
-	// Actually, MultiversX signs the JSON representation.
-	// We can try to use a library helper if available, or just standard json marshal
-	// The standard `encoding/json` sorts keys, which matches canonical requirement mostly.
 	return json.Marshal(&tx)
 }

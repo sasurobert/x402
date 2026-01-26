@@ -38,10 +38,9 @@ func NewExactMultiversXScheme(apiUrl string) *ExactMultiversXScheme {
 		EntityType:          core.Proxy,
 		CacheExpirationTime: time.Minute,
 	}
-	proxy, _ := blockchain.NewProxy(args) // Error ignored as it mainly checks client (nil) or cache
+	proxy, _ := blockchain.NewProxy(args)
 
 	return &ExactMultiversXScheme{
-		// Casing fixed: ApiUrl matches types.go
 		config: multiversx.NetworkConfig{ApiUrl: apiUrl},
 		proxy:  proxy,
 	}
@@ -65,16 +64,12 @@ func (s *ExactMultiversXScheme) GetSigners(network x402.Network) []string {
 }
 
 func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.PaymentPayload, requirements types.PaymentRequirements) (*x402.VerifyResponse, error) {
-	// 1. Unmarshal directly to ExactRelayedPayload using json mapping
-	// Optimization: Avoid double marshal/unmarshal if possible, but map->struct usually requires it or mapstructure.
-	// Using generic JSON roundtrip for simplicity and correctness with struct tags.
 	relayedPayloadPtr, err := multiversx.PayloadFromMap(payload.Payload)
 	if err != nil {
 		return nil, x402.NewVerifyError(x402.ErrCodeInvalidPayment, "", "multiversx", fmt.Errorf("invalid payload format: %v", err))
 	}
 	relayedPayload := *relayedPayloadPtr
 
-	// 2. Perform Verification using Universal logic
 	isValid, err := multiversx.VerifyPayment(ctx, relayedPayload, requirements, s.verifyViaSimulation)
 	if err != nil {
 		return nil, err
@@ -83,7 +78,6 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 		return nil, x402.NewVerifyError(x402.ErrCodeSignatureInvalid, relayedPayload.Sender, "multiversx", nil)
 	}
 
-	// 2.1 Enforce Validity Windows
 	now := uint64(time.Now().Unix())
 	if relayedPayload.ValidBefore > 0 && now > relayedPayload.ValidBefore {
 		return nil, fmt.Errorf("payment expired (validBefore: %d, now: %d)", relayedPayload.ValidBefore, now)
@@ -92,7 +86,6 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 		return nil, fmt.Errorf("payment not yet valid (validAfter: %d, now: %d)", relayedPayload.ValidAfter, now)
 	}
 
-	// 3. Validate Requirements
 	expectedReceiver := requirements.PayTo
 	expectedAmount := requirements.Amount
 	if expectedAmount == "" {
@@ -108,29 +101,23 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 	transferMethod, _ := requirements.Extra["assetTransferMethod"].(string)
 
 	if reqAsset == multiversx.NativeTokenTicker && transferMethod != multiversx.TransferMethodESDT {
-		// Case A: Direct EGLD OR Smart Contract Call paying EGLD
 		if txData.Receiver != expectedReceiver {
 			return nil, fmt.Errorf("receiver mismatch: expected %s, got %s", expectedReceiver, txData.Receiver)
 		}
 		if !multiversx.CheckBigInt(txData.Value, expectedAmount) {
 			return nil, fmt.Errorf("amount mismatch: expected %s, got %s", expectedAmount, txData.Value)
 		}
-		// Data field check is loose for Direct unless specified otherwise (e.g. strict data match).
 	} else {
-		// Case B: ESDT Transfer (MultiESDTNFTTransfer)
-		// Or Case C: EGLD via Smart Contract (wrapped/unwrapped logic not typical here, usually Direct)
 		parts := strings.Split(txData.Data, "@")
 		if len(parts) < 6 || parts[0] != "MultiESDTNFTTransfer" {
 			return nil, errors.New("invalid ESDT transfer data format (expected MultiESDTNFTTransfer)")
 		}
 
-		// Decode Destination (Receiver of tokens)
 		destHex := parts[1]
 		if !multiversx.IsValidHex(destHex) {
 			return nil, fmt.Errorf("invalid receiver hex")
 		}
 
-		// STRICT VERIFICATION: Ensure destHex matches expectedReceiver (PayTo)
 		_, pubKeyBytes, err := multiversx.DecodeBech32(expectedReceiver)
 		if err != nil {
 			return nil, fmt.Errorf("invalid expected receiver format: %v", err)
@@ -141,7 +128,6 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 			return nil, fmt.Errorf("receiver mismatch: encoded destination %s does not match requirement %s", destHex, expectedReceiver)
 		}
 
-		// Token Identifier
 		tokenBytes, err := hex.DecodeString(parts[3])
 		if err != nil {
 			return nil, fmt.Errorf("invalid token hex")
@@ -150,7 +136,6 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 			return nil, fmt.Errorf("asset mismatch: expected %s, got %s", reqAsset, string(tokenBytes))
 		}
 
-		// Amount
 		amountBytes, err := hex.DecodeString(parts[5])
 		if err != nil {
 			return nil, fmt.Errorf("invalid amount hex")
@@ -171,23 +156,19 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 }
 
 func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.PaymentPayload, requirements types.PaymentRequirements) (*x402.SettleResponse, error) {
-	// 1. Recover RelayedPayload
 	relayedPayloadPtr, err := multiversx.PayloadFromMap(payload.Payload)
 	if err != nil {
 		return nil, x402.NewSettleError("invalid_payload", "", "multiversx", "", err)
 	}
 	relayedPayload := *relayedPayloadPtr
 
-	// 2. Prepare Transaction
 	tx := relayedPayload.ToTransaction()
 
-	// 3. Broadcast
 	hash, err := s.proxy.SendTransaction(ctx, &tx)
 	if err != nil {
 		return nil, x402.NewSettleError("broadcast_failed", relayedPayload.Sender, "multiversx", "", err)
 	}
 
-	// 4. Wait for Completion
 	if err := s.waitForTx(ctx, hash); err != nil {
 		return nil, x402.NewSettleError("tx_failed", relayedPayload.Sender, "multiversx", hash, err)
 	}
@@ -213,7 +194,6 @@ func (s *ExactMultiversXScheme) waitForTx(ctx context.Context, txHash string) er
 		case <-timeout:
 			return fmt.Errorf("timeout waiting for tx %s", txHash)
 		case <-ticker.C:
-			// status: "success", "pending", etc.
 			status, err := s.getTransactionStatus(ctx, txHash)
 			if err != nil {
 				continue // retry on transient errors
@@ -227,7 +207,6 @@ func (s *ExactMultiversXScheme) waitForTx(ctx context.Context, txHash string) er
 			case "pending", "processing", "received":
 				continue
 			default:
-				// Unknown status, assume pending
 				continue
 			}
 		}
@@ -267,15 +246,10 @@ func (s *ExactMultiversXScheme) getTransactionStatus(ctx context.Context, txHash
 }
 
 func (s *ExactMultiversXScheme) verifyViaSimulation(payload multiversx.ExactRelayedPayload) (string, error) {
-	// Call /transaction/simulate
 	tx := payload.ToTransaction()
 
-	// Create simulation struct expected by API
-	// Similar to transaction.FrontendTransaction but might wrapped
-	// We send the tx directly as FrontendTransaction JSON
-
 	url := fmt.Sprintf("%s/transaction/simulate", s.config.ApiUrl)
-	txBytes, _ := json.Marshal(&tx) // FrontendTransaction marshals correctly
+	txBytes, _ := json.Marshal(&tx)
 
 	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(txBytes))
 	if err != nil {
@@ -297,12 +271,12 @@ func (s *ExactMultiversXScheme) verifyViaSimulation(payload multiversx.ExactRela
 	var res struct {
 		Data struct {
 			Result struct {
-				Status string `json:"status"` // Might be used in some versions?
+				Status string `json:"status"`
 				Hash   string `json:"hash"`
 			} `json:"result"`
 		} `json:"data"`
 		Error string `json:"error"`
-		Code  string `json:"code"` // Top level code
+		Code  string `json:"code"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return "", err
@@ -311,7 +285,6 @@ func (s *ExactMultiversXScheme) verifyViaSimulation(payload multiversx.ExactRela
 		return "", errors.New(res.Error)
 	}
 
-	// Check Code first
 	if res.Code == "successful" {
 		hash := res.Data.Result.Hash
 		if hash == "" {
@@ -320,13 +293,9 @@ func (s *ExactMultiversXScheme) verifyViaSimulation(payload multiversx.ExactRela
 		return hash, nil
 	}
 
-	// Fallback check
 	if res.Data.Result.Status != "success" && res.Data.Result.Status != "successful" {
 		return "", fmt.Errorf("simulation status not success: %s (code: %s)", res.Data.Result.Status, res.Code)
 	}
 
-	// If simulate returns a hash (it might not be the TX hash but simulation hash)
-	// We usually return the Tx Hash we computed or the simulation receipt hash.
-	// For verification purpose, success is enough.
 	return res.Data.Result.Hash, nil
 }

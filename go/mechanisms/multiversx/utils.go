@@ -38,7 +38,7 @@ func GetMultiversXChainId(network string) (string, error) {
 		if ref == "1" || ref == "D" || ref == "T" {
 			return ref, nil
 		}
-		return ref, nil
+
 	}
 
 	return "", fmt.Errorf("unsupported network format: %s", network)

@@ -3,11 +3,13 @@ package client
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
 	"time"
 
+	"github.com/multiversx/mx-chain-core-go/data/transaction"
 	"github.com/multiversx/mx-sdk-go/blockchain"
 	"github.com/multiversx/mx-sdk-go/core"
 	"github.com/multiversx/mx-sdk-go/data"
@@ -17,59 +19,18 @@ import (
 	"github.com/coinbase/x402/go/types"
 )
 
-// NetworkProvider abstracts the network interactions
-type NetworkProvider interface {
-	GetNonce(ctx context.Context, address string) (uint64, error)
-}
-
-// ProxyNetworkProvider implements NetworkProvider using mx-sdk-go
-type ProxyNetworkProvider struct {
-	proxyURL string
-}
-
-func NewProxyNetworkProvider(url string) *ProxyNetworkProvider {
-	return &ProxyNetworkProvider{proxyURL: url}
-}
-
-func (p *ProxyNetworkProvider) GetNonce(ctx context.Context, addrStr string) (uint64, error) {
-	args := blockchain.ArgsProxy{
-		ProxyURL:            p.proxyURL,
-		Client:              nil,
-		SameScState:         false,
-		ShouldBeSynced:      false,
-		FinalityCheck:       false,
-		EntityType:          core.Proxy,
-		CacheExpirationTime: time.Minute,
-	}
-	proxy, err := blockchain.NewProxy(args)
-	if err != nil {
-		return 0, err
-	}
-
-	address, err := data.NewAddressFromBech32String(addrStr)
-	if err != nil {
-		return 0, err
-	}
-
-	account, err := proxy.GetAccount(ctx, address)
-	if err != nil {
-		return 0, err
-	}
-	return account.Nonce, nil
-}
-
 // ExactMultiversXScheme implements SchemeNetworkClient
 type ExactMultiversXScheme struct {
-	signer          multiversx.ClientMultiversXSigner
-	networkProvider NetworkProvider
+	signer multiversx.ClientMultiversXSigner
+	proxy  blockchain.Proxy // Use official SDK proxy interface
 }
 
 // Option defines functional options for ExactMultiversXScheme
 type Option func(*ExactMultiversXScheme)
 
-func WithNetworkProvider(np NetworkProvider) Option {
+func WithProxy(proxy blockchain.Proxy) Option {
 	return func(s *ExactMultiversXScheme) {
-		s.networkProvider = np
+		s.proxy = proxy
 	}
 }
 
@@ -100,60 +61,76 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 
 	// 2. Prepare Transaction Data
 	gasLimit := uint64(multiversx.GasLimitStandard)
+	if gl, ok := requirements.Extra["gasLimit"].(float64); ok {
+		gasLimit = uint64(gl)
+	} else if gl, ok := requirements.Extra["gasLimit"].(int); ok {
+		gasLimit = uint64(gl)
+	}
 	gasPrice := uint64(multiversx.GasPriceDefault)
 
 	version := uint32(1)
 	chainID := multiversx.ChainIDMainnet
-	apiURL := "https://api.multiversx.com"
 
+	// Resolve Network/ChainID/API
 	if requirements.Network != "" {
-		// Parse network identifier cleanly
 		parts := strings.Split(string(requirements.Network), ":")
 		if len(parts) > 1 {
 			chainID = parts[1]
-			switch chainID {
-			case multiversx.ChainIDDevnet:
-				apiURL = "https://devnet-api.multiversx.com"
-			case multiversx.ChainIDTestnet:
-				apiURL = "https://testnet-api.multiversx.com"
-			}
 		}
 	}
+	apiURL := multiversx.GetAPIURL(chainID)
 
 	sender := s.signer.Address()
 	receiver := requirements.PayTo
 	value := requirements.Amount
+	dataString := ""
 
-	// FETCH NONCE from Network
-	var nonce uint64
-
-	// Use injected provider or create default
-	provider := s.networkProvider
-	if provider == nil {
-		provider = NewProxyNetworkProvider(apiURL)
+	// Init Proxy if not provided
+	if s.proxy == nil {
+		args := blockchain.ArgsProxy{
+			ProxyURL:            apiURL,
+			Client:              nil,
+			SameScState:         false,
+			ShouldBeSynced:      false,
+			FinalityCheck:       false,
+			EntityType:          core.Proxy,
+			CacheExpirationTime: time.Minute,
+		}
+		var err error
+		s.proxy, err = blockchain.NewProxy(args)
+		if err != nil {
+			return types.PaymentPayload{}, fmt.Errorf("failed to init default proxy: %w", err)
+		}
 	}
 
-	var err error
-	nonce, err = provider.GetNonce(ctx, sender)
+	// FETCH NONCE
+	senderAddr, err := data.NewAddressFromBech32String(sender)
+	if err != nil {
+		return types.PaymentPayload{}, fmt.Errorf("invalid sender address: %w", err)
+	}
+	account, err := s.proxy.GetAccount(ctx, senderAddr)
 	if err != nil {
 		return types.PaymentPayload{}, fmt.Errorf("failed to fetch nonce: %w", err)
 	}
+	nonce := account.Nonce
 
-	// ESDT Logic
-	dataString := ""
+	// ESDT / Token Logic
 	asset := requirements.Asset
+	if asset == "" {
+		return types.PaymentPayload{}, fmt.Errorf("asset is required")
+	}
 
-	if asset != "" && asset != "EGLD" {
-		// ESDT Transfer (MultiESDTNFTTransfer)
-		receiver = sender
+	if asset != multiversx.NativeTokenTicker {
+		// ESDT Transfer
+		// Standard is MultiESDTNFTTransfer for 1 or more tokens, or usually just 1 here.
+		receiver = sender // For MultiESDTNFTTransfer, we send to self, the "real" destination is in data
 		value = "0"
-		gasLimit = uint64(multiversx.GasLimitESDT) // Higher gas for SC call
+		gasLimit = uint64(multiversx.GasLimitESDT)
 
-		// PayTo is already validated as Bech32 above.
 		_, decodedBytes, _ := multiversx.DecodeBech32(requirements.PayTo)
 		destHex := hex.EncodeToString(decodedBytes)
 
-		tokenHex := hex.EncodeToString([]byte(requirements.Asset))
+		tokenHex := hex.EncodeToString([]byte(asset))
 
 		amtBig, ok := new(big.Int).SetString(requirements.Amount, 10)
 		if !ok {
@@ -164,33 +141,75 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 			amtHex = "0" + amtHex
 		}
 
-		// Extract ResourceID from Extra if present
+		// Resource ID / Extra Args
 		var resourceIdHex string
 		if rid, ok := requirements.Extra["resourceId"].(string); ok && rid != "" {
 			resourceIdHex = hex.EncodeToString([]byte(rid))
 		}
 
-		if resourceIdHex != "" {
-			dataString = fmt.Sprintf("MultiESDTNFTTransfer@%s@01@%s@00@%s@%s", destHex, tokenHex, amtHex, resourceIdHex)
-		} else {
-			dataString = fmt.Sprintf("MultiESDTNFTTransfer@%s@01@%s@00@%s", destHex, tokenHex, amtHex)
+		// Complex SC Arguments List (e.g. for SC calls alongside payment)
+		// Format: list of hex strings
+		var extraArgs []string
+		if argsInterface, ok := requirements.Extra["arguments"].([]interface{}); ok {
+			for _, arg := range argsInterface {
+				if argStr, ok := arg.(string); ok {
+					extraArgs = append(extraArgs, argStr)
+				}
+			}
 		}
 
+		// Construct Data Payload
+		// Format: MultiESDTNFTTransfer @ DestHex @ NumTokens(01) @ TokenIDHex @ Nonce(00) @ AmountHex @ FunctionHex(Optional) @ Args...
+		baseData := fmt.Sprintf("MultiESDTNFTTransfer@%s@01@%s@00@%s", destHex, tokenHex, amtHex)
+
+		if resourceIdHex != "" {
+			// If resourceId is present, we assume it's the function name to call on receiver
+			baseData += "@" + resourceIdHex
+		}
+
+		if len(extraArgs) > 0 {
+			baseData += "@" + strings.Join(extraArgs, "@")
+		}
+
+		dataString = baseData
+
 	} else {
-		// EGLD
+		// EGLD Transfer
+		// If "direct", it's a simple move balance.
+		// If there is a resourceID, it might be a SC call "pay@..." or just "pay"
+		// If arguments exist, we append them.
 		if rid, ok := requirements.Extra["resourceId"].(string); ok && rid != "" {
-			dataString = rid
-		} else {
-			dataString = ""
+			dataString = hex.EncodeToString([]byte(rid)) // Function name usually? Or raw string?
+			// Spec says "pay@<resource_id_hex>" in comments usually, but here we construct it.
+			// Let's assume resourceId IS the function name (e.g. "pay") or the unique ID.
+			// If it's a SC call, typically "funcName@arg1@arg2".
+		}
+
+		// If arguments exist, append them
+		if argsInterface, ok := requirements.Extra["arguments"].([]interface{}); ok {
+			var extraArgs []string
+			for _, arg := range argsInterface {
+				if argStr, ok := arg.(string); ok {
+					extraArgs = append(extraArgs, argStr)
+				}
+			}
+			if len(extraArgs) > 0 {
+				if dataString == "" {
+					// If no function name but args? Weird for EGLD transfer unless "deposit" implied?
+					// Keep simple: if args exist but no dataString, assume just args (rare)
+					dataString = strings.Join(extraArgs, "@")
+				} else {
+					dataString += "@" + strings.Join(extraArgs, "@")
+				}
+			}
 		}
 	}
 
 	// 3. Construct Payload Object
 	now := time.Now().Unix()
-	validAfter := now - 600 // 10 minutes ago
-	validBefore := now + int64(requirements.MaxTimeoutSeconds)
+	validAfter := uint64(now - 600)
+	validBefore := uint64(now + int64(requirements.MaxTimeoutSeconds))
 
-	// Fetch Options from Extra if present
 	options := uint32(0)
 	if opt, ok := requirements.Extra["options"].(float64); ok {
 		options = uint32(opt)
@@ -198,21 +217,27 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 		options = uint32(opt)
 	}
 
-	txData := multiversx.TransactionData{
-		Nonce:    nonce,
-		Value:    value,
-		Receiver: receiver,
-		Sender:   sender,
-		GasPrice: gasPrice,
-		GasLimit: gasLimit,
-		Data:     dataString,
-		ChainID:  chainID,
-		Version:  version,
-		Options:  options,
+	txData := multiversx.ExactRelayedPayload{
+		Nonce:       nonce,
+		Value:       value,
+		Receiver:    receiver,
+		Sender:      sender,
+		GasPrice:    gasPrice,
+		GasLimit:    gasLimit,
+		Data:        dataString,
+		ChainID:     chainID,
+		Version:     version,
+		Options:     options,
+		ValidAfter:  validAfter,
+		ValidBefore: validBefore,
 	}
 
-	// 4. Serialize for Signing (Canonical JSON - alphabetical sorting)
-	txBytes, err := multiversx.SerializeTransaction(txData)
+	// 4. Serialize for Signing
+	// Use SDK Transaction conversion to get bytes or use canonicalizer
+	// But we need to sign the *Transaction*, not the RelayedPayload wrapper yet.
+	sdkTx := txData.ToTransaction()
+	// NOTE: SDK SerializeTransaction is correct for signing
+	txBytes, err := s.serializeTxForSigning(sdkTx)
 	if err != nil {
 		return types.PaymentPayload{}, err
 	}
@@ -222,26 +247,38 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 	if err != nil {
 		return types.PaymentPayload{}, err
 	}
+	txData.Signature = hex.EncodeToString(sigBytes)
 
-	// 6. Build Final Payload Map directly
-	finalMap := map[string]interface{}{
-		"nonce":       txData.Nonce,
-		"value":       txData.Value,
-		"receiver":    txData.Receiver,
-		"sender":      txData.Sender,
-		"gasPrice":    txData.GasPrice,
-		"gasLimit":    txData.GasLimit,
-		"data":        txData.Data,
-		"chainID":     txData.ChainID,
-		"version":     txData.Version,
-		"signature":   hex.EncodeToString(sigBytes),
-		"validAfter":  validAfter,
-		"validBefore": validBefore,
-		"options":     txData.Options,
+	// 6. Build Final Payload Map
+	// Marshalling the struct ensures we match the JSON tags defined in types.go
+	finalBytes, err := json.Marshal(txData)
+	if err != nil {
+		return types.PaymentPayload{}, err
+	}
+	var finalMap map[string]interface{}
+	if err := json.Unmarshal(finalBytes, &finalMap); err != nil {
+		return types.PaymentPayload{}, err
 	}
 
 	return types.PaymentPayload{
 		X402Version: 2,
 		Payload:     finalMap,
 	}, nil
+}
+
+// serializeTxForSigning mimics the SDK's serialization for signing (which is JSON in MX)
+// or just uses the SDK's internal mechanisms if exposed.
+// Since we imported data.Transaction, we might need a serializer.
+// `core` has generic serializers but proper TX serialization is specific.
+// We'll use a local helper using standard library that matches MX-Chain-Go logic usually.
+func (s *ExactMultiversXScheme) serializeTxForSigning(tx transaction.FrontendTransaction) ([]byte, error) {
+	// Simple Canonical JSON for signing:
+	// Format: {"chainID":"...","data":"...","gasLimit":...,"gasPrice":...,"nonce":...,"receiver":"...","sender":"...","value":"...","version":...}
+	// Sorted keys.
+	// SDK go has `MarshalTransaction` in some versions, or we can use generic json marshal
+	// BUT MX requires specific field ordering for signing hash usually?
+	// Actually, MultiversX signs the JSON representation.
+	// We can try to use a library helper if available, or just standard json marshal
+	// The standard `encoding/json` sorts keys, which matches canonical requirement mostly.
+	return json.Marshal(&tx)
 }

@@ -9,11 +9,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/coinbase/x402/go/mechanisms/multiversx"
 	"github.com/coinbase/x402/go/mechanisms/multiversx/exact/client"
 	"github.com/coinbase/x402/go/mechanisms/multiversx/exact/facilitator"
+	"github.com/coinbase/x402/go/mechanisms/multiversx/exact/server"
 	"github.com/coinbase/x402/go/types"
+	"github.com/multiversx/mx-sdk-go/blockchain"
+	"github.com/multiversx/mx-sdk-go/core"
+	"github.com/multiversx/mx-sdk-go/data"
 )
 
 // Real Test Signer using Alice's Devnet Key
@@ -63,47 +68,76 @@ func TestIntegration_AliceFlow(t *testing.T) {
 		t.Fatalf("Failed to create Alice signer: %v", err)
 	}
 
-	// 2. Setup Client
+	// 2. Setup Components
 	ctx := context.Background()
 	cScheme := client.NewExactMultiversXScheme(signer)
 
-	// 3. Setup Facilitator (Connected to Devnet)
-	devnetURL := "https://devnet-api.multiversx.com"
+	devnetURL := multiversx.GetAPIURL(multiversx.ChainIDDevnet)
 	fScheme := facilitator.NewExactMultiversXScheme(devnetURL)
+	sScheme := server.NewExactMultiversXScheme() // Server
 
 	// Fetch Real Nonce for Alice
-	provider := client.NewProxyNetworkProvider(devnetURL)
-	realNonce, err := provider.GetNonce(ctx, signer.Address())
+	// Use SDK Proxy directly
+	args := blockchain.ArgsProxy{
+		ProxyURL:            devnetURL,
+		Client:              nil,
+		SameScState:         false,
+		ShouldBeSynced:      false,
+		FinalityCheck:       false,
+		EntityType:          core.Proxy,
+		CacheExpirationTime: time.Minute,
+	}
+	proxy, _ := blockchain.NewProxy(args)
+	// Need sender address handler
+	senderAddrStruct, _ := data.NewAddressFromBech32String(signer.Address())
+	account, err := proxy.GetAccount(ctx, senderAddrStruct)
+
+	realNonce := uint64(100)
 	if err != nil {
 		t.Logf("Failed to fetch real Alice nonce, using fallback 100: %v", err)
-		realNonce = 100
 	} else {
+		realNonce = account.Nonce
 		t.Logf("Fetched real Alice nonce: %d", realNonce)
 	}
 
-	// 4. Requirements (Bob as receiver)
+	// 3. Define Base Requirements (Server Side Input)
 	bobAddr := "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx"
-	req := types.PaymentRequirements{
+	baseReq := types.PaymentRequirements{
 		PayTo:             bobAddr,
 		Amount:            "1000000000000000000", // 1 EGLD
-		Asset:             "EGLD",
+		Asset:             multiversx.NativeTokenTicker,
 		Network:           "multiversx:D",
 		MaxTimeoutSeconds: 3600,
 		Extra: map[string]interface{}{
+			// Server might add these or validate them.
+			// Client usually adds Nonce, but here we simulate full context prep
 			"resourceId": "test-resource-alice",
 			"nonce":      realNonce,
+			"gasLimit":   1000000,
 		},
 	}
 
-	// 5. Create Payload (Client)
-	payload, err := cScheme.CreatePaymentPayload(ctx, req)
+	// 4. Server Enhances Requirements
+	// This simulates the "Instruction" phase where Server preps the requirements for Client
+	enhancedReq, err := sScheme.EnhancePaymentRequirements(ctx, baseReq, types.SupportedKind{}, nil)
+	if err != nil {
+		t.Fatalf("Server failed to enhance requirements: %v", err)
+	}
+
+	// Server Validate (Double check)
+	if err := sScheme.ValidatePaymentRequirements(enhancedReq); err != nil {
+		t.Fatalf("Server validation failed: %v", err)
+	}
+
+	// 5. Create Payload (Client) implements these requirements
+	payload, err := cScheme.CreatePaymentPayload(ctx, enhancedReq)
 	if err != nil {
 		t.Fatalf("Client failed to create payload: %v", err)
 	}
 
-	// 6. Verify Payload (Facilitator)
+	// 6. Verify Payload (Facilitator) checks against Requirements
 	// This will hit Devnet API /transaction/simulate
-	resp, err := fScheme.Verify(ctx, payload, req)
+	resp, err := fScheme.Verify(ctx, payload, enhancedReq)
 	if err != nil {
 		t.Fatalf("Verification failed: %v", err)
 	} else {
@@ -115,9 +149,20 @@ func TestIntegration_AliceFlow(t *testing.T) {
 	}
 }
 
+// Helper struct for Simulation Mock
+type SimulationResponse struct {
+	Data struct {
+		Result struct {
+			Status string `json:"status"`
+			Hash   string `json:"hash"`
+		} `json:"result"`
+	} `json:"data"`
+	Error string `json:"error"`
+}
+
 func TestFacilitatorVerify_ESDT_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := multiversx.SimulationResponse{}
+		resp := SimulationResponse{}
 		resp.Data.Result.Status = "success"
 		resp.Data.Result.Hash = "mock_esdt_hash"
 		json.NewEncoder(w).Encode(resp)
@@ -144,12 +189,14 @@ func TestFacilitatorVerify_ESDT_Success(t *testing.T) {
 	dataString := fmt.Sprintf("MultiESDTNFTTransfer@%s@01@%s@00@%s", payToHex, tokenHex, amountHex)
 
 	rp := multiversx.ExactRelayedPayload{}
-	rp.Data.Data = dataString
-	rp.Data.Value = "0"
-	rp.Data.Receiver = payTo // Must match PayTo
-	rp.Data.Sender = payTo   // Must be valid Bech32 (using Bob as sender for convenience)
+	rp.Data = dataString
+	rp.Value = "0"
+	rp.Receiver = payTo // Must match PayTo
+	rp.Sender = payTo   // Must be valid Bech32 (using Bob as sender for convenience)
 	// Must be valid hex (64 bytes)
-	rp.Data.Signature = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	rp.Signature = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	rp.ChainID = "D" // Needed for ToTransaction defaults if checked?
+	rp.Version = 1
 
 	payloadBytes, _ := json.Marshal(rp)
 	var rpMap map[string]interface{}
@@ -163,6 +210,9 @@ func TestFacilitatorVerify_ESDT_Success(t *testing.T) {
 		PayTo:  payTo, // Bech32
 		Amount: "100",
 		Asset:  "USDC-123",
+		Extra: map[string]interface{}{
+			"assetTransferMethod": multiversx.TransferMethodESDT,
+		},
 	}
 
 	resp, err := scheme.Verify(context.Background(), paymentPayload, req)
@@ -177,7 +227,7 @@ func TestFacilitatorVerify_ESDT_Success(t *testing.T) {
 func TestFacilitatorVerify_EGLD_Alias_MultiESDT(t *testing.T) {
 	// Verify that EGLD-000000 via MultiESDT payload is accepted
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := multiversx.SimulationResponse{}
+		resp := SimulationResponse{}
 		resp.Data.Result.Status = "success"
 		resp.Data.Result.Hash = "mock_egld_alias_hash"
 		json.NewEncoder(w).Encode(resp)
@@ -199,11 +249,11 @@ func TestFacilitatorVerify_EGLD_Alias_MultiESDT(t *testing.T) {
 	dataString := fmt.Sprintf("MultiESDTNFTTransfer@%s@01@%s@00@%s", payToHex, tokenHex, amountHex)
 
 	rp := multiversx.ExactRelayedPayload{}
-	rp.Data.Data = dataString
-	rp.Data.Value = "0"
-	rp.Data.Receiver = payTo
-	rp.Data.Sender = payTo
-	rp.Data.Signature = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	rp.Data = dataString
+	rp.Value = "0"
+	rp.Receiver = payTo
+	rp.Sender = payTo
+	rp.Signature = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
 
 	payloadBytes, _ := json.Marshal(rp)
 	var rpMap map[string]interface{}
@@ -217,6 +267,9 @@ func TestFacilitatorVerify_EGLD_Alias_MultiESDT(t *testing.T) {
 		PayTo:  payTo, // Bech32
 		Amount: "100",
 		Asset:  "EGLD-000000",
+		Extra: map[string]interface{}{
+			"assetTransferMethod": multiversx.TransferMethodESDT,
+		},
 	}
 
 	resp, err := scheme.Verify(context.Background(), paymentPayload, req)

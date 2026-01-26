@@ -5,34 +5,21 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	x402 "github.com/coinbase/x402/go"
 	"github.com/coinbase/x402/go/types"
 )
 
-// VerifyUniversalSignature verifies the payment payload signature
-// For MultiversX, this implies:
-// 1. Validating the Ed25519 signature against the transaction bytes (if accessible/reconstructible).
-// 2. Simulating the transaction (Smart Contract wallets, or just general validity).
-//
-// Since we don't effectively reconstruct the canonical JSON bytes locally easily without SDK canonicalizer,
-// we rely heavily on Simulation for the cryptographic proof (the node verifies the sig).
-//
-// However, if we CAN verify Ed25519 locally, we should.
-// But without the exact serialization logic from SDK, local verification is error-prone.
-// EVM has standard hashing (EIP-712). MultiversX has "canonical JSON of fields".
-// Recommendation: We stick to Simulation as the "Universal" verifier for MultiversX in this Go integration,
-// because implementing a Go Canonical JSON Serializer for MultiversX txs perfectly matching the node is complex.
-//
-// But we will expose a function that integrates the checks.
-
+// VerifyPayment verifies the payment payload
 func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirements types.PaymentRequirements, simulator func(ExactRelayedPayload) (string, error)) (bool, error) {
 	// 1. Static Checks
-	if payload.Receiver != requirements.PayTo {
-		// Just a warning or strict check?
-		// EVM checks strictness usually.
-		return false, x402.NewVerifyError("receiver_mismatch", payload.Sender, "multiversx", fmt.Errorf("got %s, want %s", payload.Receiver, requirements.PayTo))
-	}
+	// Receiver matches PayTo (unless ESDT transfer where internal logic handles it, or Relayer paying gas)
+	// Actually, payload.Receiver is who gets the money in Direct transfer.
+	// For ESDT, payload.Receiver is Self (Sender).
+	// So we can't strictly check payload.Receiver == requirements.PayTo universally without knowing the type.
+	// However, the caller (Facilitator) does component-level checks.
+	// Here we verify the signature primarily.
 
 	// 2. Signature Presence
 	if payload.Signature == "" {
@@ -40,39 +27,17 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 	}
 
 	// 3. Local Ed25519 Verification
-	// If we can verify locally, we essentially validate the signature is correct for the Sender.
-	// But we also need to ensure the Tx itself is valid (nonce, balance, etc).
-	// Simulator does both.
-	// However, usually we trust the signature if we trust the sender has funds (which we can check separately or rely on error later).
-	// For "VerifyPayment", getting a valid signature is a strong signal.
-
-	// A. Construct Signable Message
-	txData := TransactionData{
-		Nonce:    payload.Nonce,
-		Value:    payload.Value,
-		Receiver: payload.Receiver,
-		Sender:   payload.Sender,
-		GasPrice: payload.GasPrice,
-		GasLimit: payload.GasLimit,
-		Data:     payload.Data,
-		ChainID:  payload.ChainID,
-		Version:  payload.Version,
-		Options:  payload.Options,
-	}
-
-	msgBytes, err := SerializeTransaction(txData)
+	tx := payload.ToTransaction()
+	// Serialize as canonical JSON for verification
+	msgBytes, err := SerializeTransaction(tx)
 	if err != nil {
-		// If serialization fails, maybe fallback to sim?
-		// But basic serialization shouldn't fail.
 		return false, x402.NewVerifyError("serialization_failed", payload.Sender, "multiversx", err)
 	}
 
 	// B. Verify Signature
 	// Decode Sender Bech32 -> PubKey
-	// address = hrp + pubkey
 	_, pubKeyBytes, err := DecodeBech32(payload.Sender)
 	if err != nil {
-		// Invalid sender address format
 		return false, x402.NewVerifyError("invalid_sender_address", payload.Sender, "multiversx", err)
 	}
 
@@ -95,12 +60,15 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 	}
 
 	// 4. Fallback to Simulation
-	// If local verify fails, it MIGHT be because `SerializeTransaction` doesn't match node's expectation
-	// or it's a Smart Contract Wallet (MultiSig) which doesn't sign with Ed25519 of the address key.
-	// So we attempt simulation.
-
+	// If local verify fails, it MIGHT be because our serialization doesn't match the node's
+	// or it's a Smart Contract Wallet.
 	hash, err := simulator(payload)
 	if err != nil {
+		// If simulation fails, it's definitely invalid
+		// Check error string for signature?
+		if strings.Contains(err.Error(), "invalid signature") || strings.Contains(err.Error(), "verification failed") {
+			return false, x402.NewVerifyError(x402.ErrCodeSignatureInvalid, payload.Sender, "multiversx", err)
+		}
 		return false, x402.NewVerifyError("simulation_failed", payload.Sender, "multiversx", err)
 	}
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"testing"
 
@@ -43,20 +42,11 @@ func TestVerifyPayment(t *testing.T) {
 	payload.Options = 0
 
 	// 4. Sign locally
-	txMap := map[string]interface{}{
-		"nonce":    payload.Nonce,
-		"value":    payload.Value,
-		"receiver": payload.Receiver,
-		"sender":   payload.Sender,
-		"gasPrice": payload.GasPrice,
-		"gasLimit": payload.GasLimit,
-		"data":     payload.Data,
-		"chainID":  payload.ChainID,
-		"version":  payload.Version,
-		"options":  payload.Options,
+	tx := payload.ToTransaction()
+	txBytes, err := SerializeTransaction(tx)
+	if err != nil {
+		t.Fatalf("Failed to serialize tx: %v", err)
 	}
-
-	txBytes, _ := json.Marshal(txMap)
 
 	sig := ed25519.Sign(privKey, txBytes)
 	payload.Signature = hex.EncodeToString(sig)

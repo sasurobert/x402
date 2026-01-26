@@ -6,6 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/multiversx/mx-chain-core-go/data/api"
+	"github.com/multiversx/mx-chain-core-go/data/transaction"
+	"github.com/multiversx/mx-sdk-go/core"
+	"github.com/multiversx/mx-sdk-go/data"
+
 	"github.com/coinbase/x402/go/mechanisms/multiversx"
 
 	"github.com/coinbase/x402/go/types"
@@ -31,20 +36,54 @@ const (
 	testAmount = "1000000000000000000" // 1 EGLD
 )
 
-// MockNetworkProvider
-type MockNetworkProvider struct {
+// MockProxy implements Proxy interface
+type MockProxy struct {
 	nonce uint64
 	err   error
 }
 
-func (m *MockNetworkProvider) GetNonce(ctx context.Context, address string) (uint64, error) {
-	return m.nonce, m.err
+// GetAccount must match blockchain.Proxy interface
+func (m *MockProxy) GetAccount(ctx context.Context, address core.AddressHandler) (*data.Account, error) {
+	return &data.Account{
+		Nonce: m.nonce,
+	}, m.err
+}
+
+func (m *MockProxy) SendTransaction(ctx context.Context, tx *transaction.FrontendTransaction) (string, error) {
+	return "txHash", nil
+}
+
+func (m *MockProxy) GetNetworkConfig(ctx context.Context) (*data.NetworkConfig, error) {
+	return &data.NetworkConfig{
+		MinGasLimit: 50000,
+		MinGasPrice: 1000000000,
+		ChainID:     "D",
+	}, nil
+}
+
+// IsInterfaceNil required by Proxy interface
+func (m *MockProxy) IsInterfaceNil() bool {
+	return m == nil
+}
+
+// Helpers methods required by Proxy interface (stubs)
+func (m *MockProxy) SendTransactions(ctx context.Context, txs []*transaction.FrontendTransaction) ([]string, error) {
+	return []string{"txHash"}, nil
+}
+func (m *MockProxy) GetGuardianData(ctx context.Context, address core.AddressHandler) (*api.GuardianData, error) {
+	return nil, nil // Not used
+}
+func (m *MockProxy) ExecuteVMQuery(ctx context.Context, vmRequest *data.VmValueRequest) (*data.VmValuesResponseData, error) {
+	return nil, nil // Not used
+}
+func (m *MockProxy) FilterLogs(ctx context.Context, filter *core.FilterQuery) ([]*transaction.Events, error) {
+	return nil, nil // Not used
 }
 
 func TestCreatePaymentPayload_EGLD(t *testing.T) {
 	signer := &MockSigner{addr: testSender}
-	mockProvider := &MockNetworkProvider{nonce: 15}
-	scheme := NewExactMultiversXScheme(signer, WithNetworkProvider(mockProvider))
+	mockProxy := &MockProxy{nonce: 15}
+	scheme := NewExactMultiversXScheme(signer, WithProxy(mockProxy))
 
 	req := types.PaymentRequirements{
 		PayTo:   testPayTo,
@@ -79,8 +118,8 @@ func TestCreatePaymentPayload_EGLD(t *testing.T) {
 
 func TestCreatePaymentPayload_ESDT(t *testing.T) {
 	signer := &MockSigner{addr: testSender}
-	mockProvider := &MockNetworkProvider{nonce: 20}
-	scheme := NewExactMultiversXScheme(signer, WithNetworkProvider(mockProvider))
+	mockProxy := &MockProxy{nonce: 20}
+	scheme := NewExactMultiversXScheme(signer, WithProxy(mockProxy))
 
 	req := types.PaymentRequirements{
 		PayTo:   testPayTo,
@@ -118,8 +157,8 @@ func TestCreatePaymentPayload_ESDT(t *testing.T) {
 
 func TestCreatePaymentPayload_ESDT_WithResourceID(t *testing.T) {
 	signer := &MockSigner{addr: testSender}
-	mockProvider := &MockNetworkProvider{nonce: 25}
-	scheme := NewExactMultiversXScheme(signer, WithNetworkProvider(mockProvider))
+	mockProxy := &MockProxy{nonce: 25}
+	scheme := NewExactMultiversXScheme(signer, WithProxy(mockProxy))
 
 	req := types.PaymentRequirements{
 		PayTo:   testPayTo,
@@ -150,8 +189,8 @@ func TestCreatePaymentPayload_ESDT_WithResourceID(t *testing.T) {
 
 func TestCreatePaymentPayload_EGLD_Alias(t *testing.T) {
 	signer := &MockSigner{addr: testSender}
-	mockProvider := &MockNetworkProvider{nonce: 30}
-	scheme := NewExactMultiversXScheme(signer, WithNetworkProvider(mockProvider))
+	mockProxy := &MockProxy{nonce: 30}
+	scheme := NewExactMultiversXScheme(signer, WithProxy(mockProxy))
 
 	req := types.PaymentRequirements{
 		PayTo:   testPayTo,

@@ -155,6 +155,7 @@ func TestEnhancePaymentRequirements(t *testing.T) {
 
 	req := types.PaymentRequirements{
 		PayTo: "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx",
+		Asset: "EGLD", // Explicitly provided as default is removed
 	}
 
 	got, err := scheme.EnhancePaymentRequirements(context.Background(), req, types.SupportedKind{}, nil)
@@ -162,7 +163,7 @@ func TestEnhancePaymentRequirements(t *testing.T) {
 		t.Fatalf("EnhancePaymentRequirements error: %v", err)
 	}
 
-	if got.Asset != "EGLD" {
-		t.Errorf("Expected default asset EGLD, got %s", got.Asset)
+	if got.Extra["assetTransferMethod"] != "direct" {
+		t.Errorf("Expected transfer method direct, got %v", got.Extra["assetTransferMethod"])
 	}
 }

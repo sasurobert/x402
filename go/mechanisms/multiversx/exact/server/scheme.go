@@ -38,7 +38,7 @@ func (s *ExactMultiversXScheme) ParsePrice(price x402.Price, network x402.Networ
 	// 1. Try casting to AssetAmount struct (already parsed)
 	if pStruct, ok := price.(x402.AssetAmount); ok {
 		if pStruct.Asset == "" {
-			pStruct.Asset = "EGLD"
+			return x402.AssetAmount{}, fmt.Errorf("asset is required")
 		}
 		return pStruct, nil
 	}
@@ -49,11 +49,9 @@ func (s *ExactMultiversXScheme) ParsePrice(price x402.Price, network x402.Networ
 		asset, _ := pMap["asset"].(string)
 
 		if asset == "" {
-			asset = "EGLD"
+			return x402.AssetAmount{}, fmt.Errorf("asset is required in price map")
 		}
 
-		// If it's a map, we assume it's already formatted/raw or we accept it as is.
-		// EVM implementation returns directly here too.
 		return x402.AssetAmount{
 			Asset:  asset,
 			Amount: amount,
@@ -86,8 +84,9 @@ func (s *ExactMultiversXScheme) parseMoneyToDecimal(price x402.Price) (float64, 
 	case string:
 		cleanPrice := strings.TrimSpace(v)
 		cleanPrice = strings.TrimPrefix(cleanPrice, "$")
-		// Remove typical currency suffixes if any, though usually just number
-		// For consistency with EVM, we can strip USD etc if needed, but basic float parse is key.
+		cleanPrice = strings.TrimSuffix(cleanPrice, " USD")
+		cleanPrice = strings.TrimSuffix(cleanPrice, " USDC")
+		cleanPrice = strings.TrimSpace(cleanPrice)
 		amount, err := strconv.ParseFloat(cleanPrice, 64)
 		if err != nil {
 			return 0, fmt.Errorf("failed to parse price string '%s': %w", v, err)
@@ -119,7 +118,7 @@ func (s *ExactMultiversXScheme) defaultMoneyConversion(amount float64, network x
 	finalInt, _ := result.Int(nil)
 
 	return x402.AssetAmount{
-		Asset:  "EGLD",
+		Asset:  multiversx.NativeTokenTicker,
 		Amount: finalInt.String(),
 	}, nil
 }
@@ -141,16 +140,31 @@ func (s *ExactMultiversXScheme) EnhancePaymentRequirements(
 		reqCopy.Extra = make(map[string]interface{})
 	}
 
-	if reqCopy.Asset == "" {
-		reqCopy.Asset = "EGLD"
-	}
-
-	// We could parse amount here similarly if needed, but Enhance usually assumes valid reqs or prepares them.
-	// We'll leave basic enhancement.
-
 	if reqCopy.PayTo == "" {
 		return reqCopy, fmt.Errorf("PayTo is required for MultiversX payments")
 	}
+
+	if reqCopy.Asset == "" {
+		// As per strict requirement: no default!
+		// However, Enhance might be called before Validate.
+		// If we want to fail here, we can return error.
+		// Or assume Validate will catch it.
+		// The user asked to ensure if asset == "" return error.
+		return reqCopy, fmt.Errorf("asset is required")
+	}
+
+	// Ensure assetTransferMethod is defaulted if not present
+	if _, ok := reqCopy.Extra["assetTransferMethod"]; !ok {
+		// Default logic? Or leave empty for client to decide?
+		// Client logic defaults to "direct" for EGLD and "esdt" for others usually,
+		// but providing a hint is good.
+		if reqCopy.Asset == multiversx.NativeTokenTicker {
+			reqCopy.Extra["assetTransferMethod"] = multiversx.TransferMethodDirect
+		}
+	}
+
+	// Parse Options if present in some other form, or ensure it's passed through
+	// Currently just passing through Extra.
 
 	return reqCopy, nil
 }
@@ -172,9 +186,11 @@ func (s *ExactMultiversXScheme) ValidatePaymentRequirements(requirements x402.Pa
 	}
 
 	// 3. Check Asset (TokenID)
-	// If it's EGLD, it's valid (checked by name/convention)
-	// If it's something else, must match TokenID format
-	if requirements.Asset != "" && requirements.Asset != "EGLD" {
+	if requirements.Asset == "" {
+		return x402.NewPaymentError(x402.ErrCodeInvalidPayment, "asset is required", nil)
+	}
+
+	if requirements.Asset != "EGLD" {
 		if !multiversx.IsValidTokenID(requirements.Asset) {
 			return x402.NewPaymentError(x402.ErrCodeInvalidPayment, fmt.Sprintf("invalid asset TokenID: %s", requirements.Asset), nil)
 		}

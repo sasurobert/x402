@@ -7,6 +7,8 @@ import (
 	"math/big"
 	"regexp"
 	"strings"
+
+	"github.com/multiversx/mx-chain-core-go/data/transaction"
 )
 
 var tokenIDRegex = regexp.MustCompile(`^[A-Z0-9]{3,8}-[0-9a-fA-F]{6}$`)
@@ -46,6 +48,22 @@ func GetMultiversXChainId(network string) (string, error) {
 	}
 
 	return "", fmt.Errorf("unsupported network format: %s", network)
+}
+
+// GetAPIURL returns the MultiversX API URL for a given Chain ID
+func GetAPIURL(chainID string) string {
+	switch chainID {
+	case ChainIDDevnet:
+		return "https://devnet-api.multiversx.com"
+	case ChainIDTestnet:
+		return "https://testnet-api.multiversx.com"
+	case ChainIDMainnet:
+		return "https://api.multiversx.com"
+	default:
+		// Fallback to mainnet if unknown? Or explicit empty?
+		// Usually Mainnet is default.
+		return "https://api.multiversx.com"
+	}
 }
 
 // IsValidAddress checks if addres is valid Bech32 with Checksum
@@ -105,29 +123,23 @@ func CalculateGasLimit(data []byte, numTransfers int) uint64 {
 }
 
 // SerializeTransaction creates the bytes to be signed
-func SerializeTransaction(data TransactionData) ([]byte, error) {
+func SerializeTransaction(tx transaction.FrontendTransaction) ([]byte, error) {
 	// Standard JSON serialization of the map of fields
-	// We use a map to relying on encoding/json to sort keys mostly, but typically sdk signatures rely on specific order.
-	// Go's json marshaling of map sorts keys alphabetically.
+	// We use a map to relying on encoding/json to sort keys mostly.
 	// Keys: chainID, data, gasLimit, gasPrice, nonce, options, receiver, sender, value, version.
 	// This ALPHABETICAL order is standard for MultiversX (canonical JSON).
-	// NOTE: We use map[string]interface{} specifically because encoding/json guarantees alphabetical key sorting,
-	// which matches the Canonical JSON requirement for MultiversX transaction signing.
 	m := map[string]interface{}{
-		"nonce":    data.Nonce,
-		"value":    data.Value,
-		"receiver": data.Receiver,
-		"sender":   data.Sender,
-		"gasPrice": data.GasPrice,
-		"gasLimit": data.GasLimit,
-		"data":     data.Data,
-		"chainID":  data.ChainID,
-		"version":  data.Version,
-		"options":  data.Options,
+		"nonce":    tx.Nonce,
+		"value":    tx.Value,
+		"receiver": tx.Receiver,
+		"sender":   tx.Sender,
+		"gasPrice": tx.GasPrice,
+		"gasLimit": tx.GasLimit,
+		"data":     string(tx.Data), // Convert []byte to string for proper JSON string representation
+		"chainID":  tx.ChainID,
+		"version":  tx.Version,
+		"options":  tx.Options,
 	}
-	// We do NOT include signature, validAfter, validBefore in the signed part of standard Tx V1/V2 usually.
 
-	// Issue: encoding/json escapes <, >, & etc. The protocol might not expect that?
-	// Usually standard Go JSON is fine.
 	return json.Marshal(m)
 }

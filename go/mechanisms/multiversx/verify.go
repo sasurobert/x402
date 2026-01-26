@@ -2,47 +2,81 @@ package multiversx
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
+	"strings"
 
+	"github.com/multiversx/mx-sdk-go/data"
+
+	x402 "github.com/coinbase/x402/go"
 	"github.com/coinbase/x402/go/types"
 )
 
-// VerifyUniversalSignature verifies the payment payload signature
-// For MultiversX, this implies:
-// 1. Validating the Ed25519 signature against the transaction bytes (if accessible/reconstructible).
-// 2. Simulating the transaction (Smart Contract wallets, or just general validity).
-//
-// Since we don't effectively reconstruct the canonical JSON bytes locally easily without SDK canonicalizer,
-// we rely heavily on Simulation for the cryptographic proof (the node verifies the sig).
-//
-// However, if we CAN verify Ed25519 locally, we should.
-// But without the exact serialization logic from SDK, local verification is error-prone.
-// EVM has standard hashing (EIP-712). MultiversX has "canonical JSON of fields".
-// Recommendation: We stick to Simulation as the "Universal" verifier for MultiversX in this Go integration,
-// because implementing a Go Canonical JSON Serializer for MultiversX txs perfectly matching the node is complex.
-//
-// But we will expose a function that integrates the checks.
-
+// VerifyPayment verifies the payment payload
 func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirements types.PaymentRequirements, simulator func(ExactRelayedPayload) (string, error)) (bool, error) {
 	// 1. Static Checks
-	if payload.Data.Receiver != requirements.PayTo {
-		// Strict check depending on ESDT vs EGLD?
-		// Handled by caller usually, but good to have utilities.
-	}
+	// Receiver matches PayTo (unless ESDT transfer where internal logic handles it, or Relayer paying gas)
+	// Actually, payload.Receiver is who gets the money in Direct transfer.
+	// For ESDT, payload.Receiver is Self (Sender).
+	// So we can't strictly check payload.Receiver == requirements.PayTo universally without knowing the type.
+	// However, the caller (Facilitator) does component-level checks.
+	// Here we verify the signature primarily.
 
 	// 2. Signature Presence
-	if payload.Data.Signature == "" {
-		return false, fmt.Errorf("missing signature")
+	if payload.Signature == "" {
+		return false, x402.NewVerifyError(x402.ErrCodeSignatureInvalid, payload.Sender, "multiversx", fmt.Errorf("missing signature"))
 	}
 
-	// 3. Simulation (The specific "Universal" verification for MX)
+	// 3. Local Ed25519 Verification
+	tx := payload.ToTransaction()
+	// Serialize as canonical JSON for verification
+	msgBytes, err := SerializeTransaction(tx)
+	if err != nil {
+		return false, x402.NewVerifyError("serialization_failed", payload.Sender, "multiversx", err)
+	}
+
+	// B. Verify Signature
+	// Decode Sender Bech32 -> PubKey
+	addr, err := data.NewAddressFromBech32String(payload.Sender)
+	if err != nil {
+		return false, x402.NewVerifyError("invalid_sender_address", payload.Sender, "multiversx", err)
+	}
+	pubKeyBytes := addr.AddressBytes()
+
+	sigBytes, err := hex.DecodeString(payload.Signature)
+	if err != nil {
+		return false, x402.NewVerifyError("invalid_signature_hex", payload.Sender, "multiversx", err)
+	}
+
+	if len(sigBytes) != 64 {
+		return false, x402.NewVerifyError("invalid_signature_length", payload.Sender, "multiversx", fmt.Errorf("expected 64 bytes, got %d", len(sigBytes)))
+	}
+
+	if len(pubKeyBytes) != 32 {
+		return false, x402.NewVerifyError("invalid_public_key_length", payload.Sender, "multiversx", fmt.Errorf("expected 32 bytes, got %d", len(pubKeyBytes)))
+	}
+
+	if ed25519.Verify(pubKeyBytes, msgBytes, sigBytes) {
+		// Valid Signature!
+		return true, nil
+	}
+
+	// 4. Fallback to Simulation
+	// If local verify fails, it MIGHT be because our serialization doesn't match the node's
+	// or it's a Smart Contract Wallet.
 	hash, err := simulator(payload)
 	if err != nil {
-		return false, fmt.Errorf("simulation failed: %w", err)
+		// If simulation fails, it's definitely invalid
+		// Check error string for signature?
+		if strings.Contains(err.Error(), "invalid signature") || strings.Contains(err.Error(), "verification failed") {
+			return false, x402.NewVerifyError(x402.ErrCodeSignatureInvalid, payload.Sender, "multiversx", err)
+		}
+		return false, x402.NewVerifyError("simulation_failed", payload.Sender, "multiversx", err)
 	}
 
 	if hash == "" {
-		return false, fmt.Errorf("simulation returned empty hash")
+		return false, x402.NewVerifyError("simulation_returned_empty_hash", payload.Sender, "multiversx", nil)
 	}
 
 	return true, nil

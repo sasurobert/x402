@@ -2,15 +2,26 @@ package multiversx
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
+	"regexp"
 	"strings"
+
+	"github.com/multiversx/mx-chain-core-go/data/transaction"
+	"github.com/multiversx/mx-sdk-go/data"
 )
+
+var tokenIDRegex = regexp.MustCompile(`^[A-Z0-9]{3,8}-[0-9a-fA-F]{6}$`)
+
+// IsValidTokenID checks if the token ID follows the MultiversX ESDT format (Ticker-Nonce)
+func IsValidTokenID(tokenID string) bool {
+	return tokenIDRegex.MatchString(tokenID)
+}
 
 // GetMultiversXChainId returns the chain ID for a given network string
 // Supports "multiversx:1", "multiversx:D", "multiversx:T", or legacy short names
 func GetMultiversXChainId(network string) (string, error) {
-	// Normalize
 	net := network
 
 	// Map common aliases
@@ -23,42 +34,41 @@ func GetMultiversXChainId(network string) (string, error) {
 		return "T", nil
 	}
 
-	// Parse CAIP-2 or custom format "multiversx:Ref"
 	if strings.HasPrefix(net, "multiversx:") {
 		ref := strings.TrimPrefix(net, "multiversx:")
-		// Ref must be 1, D, T usually
 		if ref == "1" || ref == "D" || ref == "T" {
 			return ref, nil
 		}
-		// Allow custom
-		return ref, nil
+
 	}
 
 	return "", fmt.Errorf("unsupported network format: %s", network)
 }
 
-// IsValidAddress checks if addres is valid Bech32 with Checksum
+// GetAPIURL returns the MultiversX API URL for a given Chain ID
+func GetAPIURL(chainID string) string {
+	switch chainID {
+	case ChainIDDevnet:
+		return "https://devnet-api.multiversx.com"
+	case ChainIDTestnet:
+		return "https://testnet-api.multiversx.com"
+	case ChainIDMainnet:
+		return "https://api.multiversx.com"
+	default:
+		return "https://api.multiversx.com"
+	}
+}
+
 func IsValidAddress(address string) bool {
-	// 1. Basic length check (erd1... is 62)
 	if len(address) != 62 {
 		return false
 	}
 
-	// 2. Full Bech32 Decode & Checksum Verify
-	hrp, _, err := DecodeBech32(address)
-	if err != nil {
-		return false
-	}
-
-	// 3. Check HRP is "erd"
-	if hrp != "erd" {
-		return false
-	}
-
-	return true
+	_, err := data.NewAddressFromBech32String(address)
+	return err == nil
 }
 
-// IsValidHex checks if string is valid hex (length check optional?)
+// IsValidHex checks if string is valid hex
 func IsValidHex(s string) bool {
 	_, err := hex.DecodeString(s)
 	return err == nil
@@ -75,5 +85,36 @@ func CheckAmount(amount string) (*big.Int, error) {
 	if !ok {
 		return nil, fmt.Errorf("invalid amount: %s", amount)
 	}
+
 	return i, nil
+}
+
+func CalculateGasLimit(data []byte, numTransfers int) uint64 {
+	const BaseCost = 50000
+	const GasPerByte = 1500
+	const MultiTransferCost = 200000
+	const RelayedCost = 50000
+
+	return BaseCost +
+		(GasPerByte * uint64(len(data))) +
+		(MultiTransferCost * uint64(numTransfers)) +
+		RelayedCost
+}
+
+// SerializeTransaction creates the bytes to be signed
+func SerializeTransaction(tx transaction.FrontendTransaction) ([]byte, error) {
+	m := map[string]interface{}{
+		"nonce":    tx.Nonce,
+		"value":    tx.Value,
+		"receiver": tx.Receiver,
+		"sender":   tx.Sender,
+		"gasPrice": tx.GasPrice,
+		"gasLimit": tx.GasLimit,
+		"data":     string(tx.Data),
+		"chainID":  tx.ChainID,
+		"version":  tx.Version,
+		"options":  tx.Options,
+	}
+
+	return json.Marshal(m)
 }

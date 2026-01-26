@@ -14,7 +14,7 @@ func TestGetMultiversXChainId(t *testing.T) {
 		{"multiversx-devnet", "D", false},
 		{"multiversx:T", "T", false},
 		{"multiversx:1", "1", false},
-		{"multiversx:Custom", "Custom", false},
+		{"multiversx:Custom", "", true},
 		{"invalid", "", true},
 		{"multiversx-invalid", "", true},
 	}
@@ -55,19 +55,12 @@ func TestIsValidAddress(t *testing.T) {
 		// Invalid Checksum (last char changed 2 -> 3)
 		{"erd1qyu5wthldzr8wx5c9ucg83cq4jgy80zy85ryfx475fsz99m4h39s292043", false},
 
-		// Mixed Case (Bech32 allows mixed case if all same, but DecodeBech32 might be strict or assume lower. Standard says MUST be mixed or lower. )
-		// Our implementation uses `strings.IndexByte(charset, data[i])`. Charset is lowercase.
-		// If input is uppercase, it fails unless we lower it. Standard libraries verify case.
-		// Let's check our impl logic: it doesn't ToLower. So it expects lowercase.
-		// Standard bech32 usually enforces one case.
-		{"ERD1QYU5WTHLDZR8WX5C9UCG83CQ4JGY80ZY85RYFX475FSZ99M4H39S292042", false}, // Currently implementation fails uppercase without Lower()
+		{"ERD1QYU5WTHLDZR8WX5C9UCG83CQ4JGY80ZY85RYFX475FSZ99M4H39S292042", false},
 	}
 
 	for _, tc := range tests {
 		if res := IsValidAddress(tc.addr); res != tc.valid {
-			// Debug failure
-			_, _, err := DecodeBech32(tc.addr)
-			t.Errorf("IsValidAddress(%s) = %v; expected %v. Error: %v", tc.addr, res, tc.valid, err)
+			t.Errorf("IsValidAddress(%s) = %v; expected %v", tc.addr, res, tc.valid)
 		}
 	}
 }
@@ -80,5 +73,79 @@ func TestCheckAmount(t *testing.T) {
 	_, err = CheckAmount("abc")
 	if err == nil {
 		t.Errorf("Invalid string passed")
+	}
+}
+
+func TestIsValidTokenID(t *testing.T) {
+	tests := []struct {
+		name    string
+		tokenID string
+		valid   bool
+	}{
+		{"EGLD", "EGLD", false}, // EGLD is not an ESDT TokenID
+		{"Valid USDC", "USDC-123456", true},
+		{"Valid WEGLD", "WEGLD-abcdef", true},
+		{"Too Short Ticker", "A-123456", false}, // Ticker < 3 chars
+		{"Invalid Nonce Length", "USDC-12345", false},
+		{"Invalid Nonce Length Long", "USDC-1234567", false},
+		{"Invalid Nonce Char", "USDC-12345G", false},
+		{"No Dash", "USDC123456", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsValidTokenID(tt.tokenID); got != tt.valid {
+				t.Errorf("IsValidTokenID(%q) = %v; want %v", tt.tokenID, got, tt.valid)
+			}
+		})
+	}
+}
+
+func TestCalculateGasLimit(t *testing.T) {
+	tests := []struct {
+		name         string
+		data         []byte
+		numTransfers int
+		expected     uint64
+	}{
+		{
+			name:         "Base case (no data, no transfers)",
+			data:         []byte{},
+			numTransfers: 0,
+			expected:     100000, // 50k base + 50k relayed
+		},
+		{
+			name:         "One transfer (no data)",
+			data:         []byte{},
+			numTransfers: 1,
+			expected:     300000, // 50k base + 200k transfer + 50k relayed
+		},
+		{
+			name:         "Two transfers (no data)",
+			data:         []byte{},
+			numTransfers: 2,
+			expected:     500000, // 50k base + 400k transfers + 50k relayed
+		},
+		{
+			name:         "Data check (10 bytes)",
+			data:         make([]byte, 10),
+			numTransfers: 0,
+			expected:     115000, // 50k base + 15k data (1.5k*10) + 50k relayed
+		},
+		{
+			name:         "Complex case",
+			data:         make([]byte, 10),
+			numTransfers: 1,
+			expected:     315000, // 50k + 15k + 200k + 50k
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CalculateGasLimit(tt.data, tt.numTransfers)
+			if got != tt.expected {
+				t.Errorf("CalculateGasLimit() = %v; want %v", got, tt.expected)
+			}
+		})
 	}
 }

@@ -35,7 +35,6 @@ func (s *ExactMultiversXScheme) RegisterMoneyParser(parser x402.MoneyParser) *Ex
 }
 
 func (s *ExactMultiversXScheme) ParsePrice(price x402.Price, network x402.Network) (x402.AssetAmount, error) {
-	// 1. Try casting to AssetAmount struct (already parsed)
 	if pStruct, ok := price.(x402.AssetAmount); ok {
 		if pStruct.Asset == "" {
 			return x402.AssetAmount{}, fmt.Errorf("asset is required")
@@ -43,7 +42,6 @@ func (s *ExactMultiversXScheme) ParsePrice(price x402.Price, network x402.Networ
 		return pStruct, nil
 	}
 
-	// 2. Try casting to Map (raw pass-through)
 	if pMap, okMap := price.(map[string]interface{}); okMap {
 		amount, _ := pMap["amount"].(string)
 		asset, _ := pMap["asset"].(string)
@@ -58,13 +56,11 @@ func (s *ExactMultiversXScheme) ParsePrice(price x402.Price, network x402.Networ
 		}, nil
 	}
 
-	// 3. Parse simple Money (string/float/int) -> Decimal
 	decimalAmount, err := s.parseMoneyToDecimal(price)
 	if err != nil {
 		return x402.AssetAmount{}, err
 	}
 
-	// 4. Try custom parsers
 	for _, parser := range s.moneyParsers {
 		result, err := parser(decimalAmount, network)
 		if err != nil {
@@ -75,7 +71,6 @@ func (s *ExactMultiversXScheme) ParsePrice(price x402.Price, network x402.Networ
 		}
 	}
 
-	// 5. Default conversion (to EGLD)
 	return s.defaultMoneyConversion(decimalAmount, network)
 }
 
@@ -104,11 +99,7 @@ func (s *ExactMultiversXScheme) parseMoneyToDecimal(price x402.Price) (float64, 
 }
 
 func (s *ExactMultiversXScheme) defaultMoneyConversion(amount float64, network x402.Network) (x402.AssetAmount, error) {
-	// Default Asset: EGLD (18 decimals)
 	decimals := 18
-
-	// Convert decimal to big int string with 18 decimals
-	// value = amount * 10^18
 
 	bigFloat := new(big.Float).SetFloat64(amount)
 	multiplier := new(big.Float).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil))
@@ -145,19 +136,10 @@ func (s *ExactMultiversXScheme) EnhancePaymentRequirements(
 	}
 
 	if reqCopy.Asset == "" {
-		// As per strict requirement: no default!
-		// However, Enhance might be called before Validate.
-		// If we want to fail here, we can return error.
-		// Or assume Validate will catch it.
-		// The user asked to ensure if asset == "" return error.
 		return reqCopy, fmt.Errorf("asset is required")
 	}
 
-	// Ensure assetTransferMethod is defaulted if not present
 	if _, ok := reqCopy.Extra["assetTransferMethod"]; !ok {
-		// Default logic? Or leave empty for client to decide?
-		// Client logic defaults to "direct" for EGLD and "esdt" for others usually,
-		// but providing a hint is good.
 		if reqCopy.Asset == multiversx.NativeTokenTicker {
 			reqCopy.Extra["assetTransferMethod"] = multiversx.TransferMethodDirect
 		}
@@ -169,23 +151,19 @@ func (s *ExactMultiversXScheme) EnhancePaymentRequirements(
 	return reqCopy, nil
 }
 
-// ValidatePaymentRequirements valides requirements strictly
+// ValidatePaymentRequirements validates requirements strictly
 func (s *ExactMultiversXScheme) ValidatePaymentRequirements(requirements x402.PaymentRequirements) error {
-	// 1. Check PayTo Address
 	if !multiversx.IsValidAddress(requirements.PayTo) {
 		return x402.NewPaymentError(x402.ErrCodeInvalidPayment, fmt.Sprintf("invalid PayTo address: %s", requirements.PayTo), nil)
 	}
 
-	// 2. Check Amount
 	if requirements.Amount == "" {
 		return x402.NewPaymentError(x402.ErrCodeInvalidPayment, "amount is required", nil)
 	}
-	// Check if amount is a valid number (big int string)
 	if _, err := multiversx.CheckAmount(requirements.Amount); err != nil {
 		return x402.NewPaymentError(x402.ErrCodeInvalidPayment, err.Error(), nil)
 	}
 
-	// 3. Check Asset (TokenID)
 	if requirements.Asset == "" {
 		return x402.NewPaymentError(x402.ErrCodeInvalidPayment, "asset is required", nil)
 	}

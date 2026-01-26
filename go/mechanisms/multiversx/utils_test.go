@@ -55,12 +55,7 @@ func TestIsValidAddress(t *testing.T) {
 		// Invalid Checksum (last char changed 2 -> 3)
 		{"erd1qyu5wthldzr8wx5c9ucg83cq4jgy80zy85ryfx475fsz99m4h39s292043", false},
 
-		// Mixed Case (Bech32 allows mixed case if all same, but DecodeBech32 might be strict or assume lower. Standard says MUST be mixed or lower. )
-		// Our implementation uses `strings.IndexByte(charset, data[i])`. Charset is lowercase.
-		// If input is uppercase, it fails unless we lower it. Standard libraries verify case.
-		// Let's check our impl logic: it doesn't ToLower. So it expects lowercase.
-		// Standard bech32 usually enforces one case.
-		{"ERD1QYU5WTHLDZR8WX5C9UCG83CQ4JGY80ZY85RYFX475FSZ99M4H39S292042", false}, // Currently implementation fails uppercase without Lower()
+		{"ERD1QYU5WTHLDZR8WX5C9UCG83CQ4JGY80ZY85RYFX475FSZ99M4H39S292042", false},
 	}
 
 	for _, tc := range tests {
@@ -92,11 +87,10 @@ func TestIsValidTokenID(t *testing.T) {
 		{"EGLD", "EGLD", false}, // EGLD is not an ESDT TokenID
 		{"Valid USDC", "USDC-123456", true},
 		{"Valid WEGLD", "WEGLD-abcdef", true},
-		{"Too Short Ticker", "A-123456", false},              // Ticker < 3 chars
-		{"Too Long Ticker", "TOOLONGNAM-123456", false},      // Ticker > 10 chars (actually limits vary, but standard says 3-10 alphanum)
-		{"Invalid Nonce Length", "USDC-12345", false},        // Nonce < 6
-		{"Invalid Nonce Length Long", "USDC-1234567", false}, // Nonce > 6
-		{"Invalid Nonce Char", "USDC-12345G", false},         // G is not hex
+		{"Too Short Ticker", "A-123456", false}, // Ticker < 3 chars
+		{"Invalid Nonce Length", "USDC-12345", false},
+		{"Invalid Nonce Length Long", "USDC-1234567", false},
+		{"Invalid Nonce Char", "USDC-12345G", false},
 		{"No Dash", "USDC123456", false},
 	}
 

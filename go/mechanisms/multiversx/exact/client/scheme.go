@@ -132,9 +132,9 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 			amtHex = "0" + amtHex
 		}
 
-		var resourceIdHex string
-		if rid, ok := requirements.Extra["resourceId"].(string); ok && rid != "" {
-			resourceIdHex = hex.EncodeToString([]byte(rid))
+		var scFunctionHex string
+		if rid, ok := requirements.Extra["scFunction"].(string); ok && rid != "" {
+			scFunctionHex = hex.EncodeToString([]byte(rid))
 		}
 
 		var extraArgs []string
@@ -148,8 +148,8 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 
 		baseData := fmt.Sprintf("MultiESDTNFTTransfer@%s@01@%s@00@%s", destHex, tokenHex, amtHex)
 
-		if resourceIdHex != "" {
-			baseData += "@" + resourceIdHex
+		if scFunctionHex != "" {
+			baseData += "@" + scFunctionHex
 		}
 
 		if len(extraArgs) > 0 {
@@ -159,7 +159,7 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 		dataString = baseData
 
 	} else {
-		if rid, ok := requirements.Extra["resourceId"].(string); ok && rid != "" {
+		if rid, ok := requirements.Extra["scFunction"].(string); ok && rid != "" {
 			dataString = hex.EncodeToString([]byte(rid))
 		}
 

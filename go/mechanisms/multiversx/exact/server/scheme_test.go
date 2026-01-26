@@ -48,10 +48,8 @@ func TestParsePrice(t *testing.T) {
 			name:      "Map with String Amount (Raw)",
 			price:     map[string]interface{}{"amount": "100", "asset": "EGLD"},
 			wantAsset: "EGLD",
-			wantAmt:   "100", // Passthrough if raw string in map? EVM logic parses it if it looks like money?
-			// EVM ParsePrice: if map, returns direct.
-			// So if user passes {"amount": "100"}, it assumes atomic units.
-			wantErr: false,
+			wantAmt:   "100",
+			wantErr:   false,
 		},
 		{
 			name:      "Custom Parser (USDC)",
@@ -148,10 +146,6 @@ func TestValidatePaymentRequirements(t *testing.T) {
 
 func TestEnhancePaymentRequirements(t *testing.T) {
 	scheme := NewExactMultiversXScheme()
-
-	// Should call Validate internally? Or just enhance?
-	// EVM Enhance calls GetAssetInfo.
-	// Here we just test basic enhancement (defaulting to EGLD)
 
 	req := types.PaymentRequirements{
 		PayTo: "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx",

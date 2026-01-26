@@ -169,7 +169,7 @@ func TestCreatePaymentPayload_ESDT_WithResourceID(t *testing.T) {
 		Asset:   testAsset,
 		Network: "multiversx:D",
 		Extra: map[string]interface{}{
-			"resourceId": "inv_123",
+			"scFunction": "inv_123",
 		},
 	}
 
@@ -188,7 +188,7 @@ func TestCreatePaymentPayload_ESDT_WithResourceID(t *testing.T) {
 	// Should be at the end
 	expectedRidHex := "696e765f313233"
 	if !strings.HasSuffix(rp.Data, expectedRidHex) {
-		t.Errorf("Data should end with resourceId hex %s, got %s", expectedRidHex, rp.Data)
+		t.Errorf("Data should end with scFunction hex %s, got %s", expectedRidHex, rp.Data)
 	}
 }
 

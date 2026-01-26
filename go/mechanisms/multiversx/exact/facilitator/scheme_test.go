@@ -15,26 +15,8 @@ import (
 	"github.com/coinbase/x402/go/types"
 )
 
-// Helper to create valid signature for tests (using verify test helper or simulation)
-// Since Verify calls verifyViaSimulation on failure of local signature (which requires valid Ed25519)
-// For unit tests, we can mock the server to return success for simulation if Sig is invalid locally,
-// OR we can generate a valid signature locally if we want to test that path.
-// verify.go implementation checks signature first. If invalid, it returns error/false.
-// WAIT: VerifyPayment in verify.go checks signature.
-// If payload.Signature is empty -> Error.
-// It verifies against Sender public key.
-// So for unit test to pass "IsValid", we need a valid signature matching Sender + Payload.
-
-// We'll use a dummy private key.
-// We can use the same helper as integration tests, or just replicate simple signing.
-
-// We need ed25519 import, but we are in facilitator package.
-// We can use crypto/ed25519.
-
+// Keys
 func TestVerify_EGLD_Direct_Success(t *testing.T) {
-	// Setup Mock Server for Simulation (used if local verify fails or as fallback? verify.go usually returns if local passes)
-	// Actually if local verify passes, it returns true.
-	// So we don't strictly *need* the mock server if we sign correctly, BUT the facilitator constructor requires a URL.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"data":{"result":{"status":"success","hash":"sim_hash"}},"error":""}`))
@@ -98,10 +80,6 @@ func TestVerify_AssetMismatch(t *testing.T) {
 	defer server.Close()
 	scheme := NewExactMultiversXScheme(server.URL)
 
-	// Just need requirements validation logic here, signature might fail later but we check mismatch first?
-	// The Verify function unmarshals, then calls VerifyPayment (sig check), THEN checks requirements.
-	// So we need a valid signature to reach logic checks.
-
 	pubKey, privKey, _ := ed25519.GenerateKey(nil)
 	senderAddr, _ := multiversx.EncodeBech32("erd", pubKey)
 
@@ -135,10 +113,6 @@ func TestVerify_AssetMismatch(t *testing.T) {
 	}
 
 	resp, err := scheme.Verify(context.Background(), types.PaymentPayload{Payload: pMap}, req)
-	// VerifyPayment (sig check) passes.
-	// Then logic checks mismatch.
-	// It returns valid=false? No, returns error for mismatch usually?
-	// Look at implementation: return nil, fmt.Errorf("amount mismatch...")
 	if err == nil {
 		t.Fatal("Expected mismatch error")
 	}

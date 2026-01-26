@@ -12,23 +12,20 @@ import (
 )
 
 func TestVerifyPayment(t *testing.T) {
-	// ... (setup code remains same, but we need to ensure imports are valid)
-	// Actually "go/types" import is already there. I'll just add x402 import.
-	// But ReplaceFileContent needs context.
 
-	// 1. Generate Keypair
+	// Generate Keypair
 	pubKey, privKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		t.Fatalf("Failed to generate key: %v", err)
 	}
 
-	// 2. Create Sender Address
+	// Create Sender Address
 	senderBech32, err := EncodeBech32("erd", pubKey)
 	if err != nil {
 		t.Fatalf("Failed to encode address: %v", err)
 	}
 
-	// 3. Setup Payload
+	// Setup Payload
 	payload := ExactRelayedPayload{}
 	payload.Nonce = 1
 	payload.Value = "0"
@@ -41,7 +38,7 @@ func TestVerifyPayment(t *testing.T) {
 	payload.Version = 1
 	payload.Options = 0
 
-	// 4. Sign locally
+	// Sign locally
 	tx := payload.ToTransaction()
 	txBytes, err := SerializeTransaction(tx)
 	if err != nil {
@@ -55,7 +52,7 @@ func TestVerifyPayment(t *testing.T) {
 		PayTo: "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx",
 	}
 
-	// 5. Test success case
+	// Test success case
 	failSim := func(p ExactRelayedPayload) (string, error) {
 		return "", errors.New("fallback to sim should not happen if local verifies")
 	}

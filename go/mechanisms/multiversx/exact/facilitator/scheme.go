@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/multiversx/mx-chain-core-go/data/transaction"
 	"github.com/multiversx/mx-sdk-go/blockchain"
 	"github.com/multiversx/mx-sdk-go/core"
 
@@ -21,6 +22,12 @@ import (
 	x402 "github.com/coinbase/x402/go"
 	"github.com/coinbase/x402/go/types"
 )
+
+// ProxyWithStatus extends the base Proxy interface with processing status check
+type ProxyWithStatus interface {
+	blockchain.Proxy
+	ProcessTransactionStatus(ctx context.Context, txHash string) (transaction.TxStatus, error)
+}
 
 // ExactMultiversXScheme implements SchemeNetworkFacilitator
 type ExactMultiversXScheme struct {
@@ -213,36 +220,19 @@ func (s *ExactMultiversXScheme) waitForTx(ctx context.Context, txHash string) er
 	}
 }
 
-// getTransactionStatus fetches status via HTTP since Proxy interface doesn't expose it
+// getTransactionStatus fetches status via the proxy engine
 func (s *ExactMultiversXScheme) getTransactionStatus(ctx context.Context, txHash string) (string, error) {
-	url := fmt.Sprintf("%s/transaction/%s/status", s.config.ApiUrl, txHash)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	proxyWithStatus, ok := s.proxy.(ProxyWithStatus)
+	if !ok {
+		return "", fmt.Errorf("proxy implementation does not support status checking")
+	}
+
+	status, err := proxyWithStatus.ProcessTransactionStatus(ctx, txHash)
 	if err != nil {
 		return "", err
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("api error: %s", resp.Status)
-	}
-
-	var res struct {
-		Data struct {
-			Status string `json:"status"`
-		} `json:"data"`
-		Error string `json:"error"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return "", err
-	}
-	if res.Error != "" {
-		return "", errors.New(res.Error)
-	}
-	return res.Data.Status, nil
+	return string(status), nil
 }
 
 func (s *ExactMultiversXScheme) verifyViaSimulation(payload multiversx.ExactRelayedPayload) (string, error) {

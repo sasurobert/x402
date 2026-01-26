@@ -33,11 +33,10 @@ The `payload` field must contain the signed transaction components.
   "x402Version": 2,
   "resource": {
     "url": "https://api.example.com/premium-data",
-    "method": "GET",
-    "description": "Premium Market Data Feed"
+    "description": "Premium Market Data Feed",
+    "mimeType": "application/json"
   },
   "accepted": {
-    "scheme": "exact",
     "network": "multiversx:D", // "D" for Devnet, "1" for Mainnet, "T" for Testnet
     "amount": "1000000000000000000", // 1 EGLD
     "asset": "EGLD",
@@ -55,7 +54,9 @@ The `payload` field must contain the signed transaction components.
     "gasLimit": 50000,
     "data": "pay@<resource_id_hex>",
     "chainID": "D",
-    "version": 1
+    "version": 1,
+    "validAfter": 1706200000,
+    "validBefore": 1706200600
   }
 }
 ```
@@ -101,7 +102,9 @@ The payload is similar, but the `data` field differs significantly to accommodat
     "gasLimit": 60000000, // Higher gas limit
     "data": "MultiESDTNFTTransfer@<dest_hex>@01@<token_hex>@00@<amount_hex>@pay@<resource_id_hex>",
     "chainID": "D",
-    "version": 1
+    "version": 1,
+    "validAfter": 1706200000,
+    "validBefore": 1706200600
   }
 }
 ```

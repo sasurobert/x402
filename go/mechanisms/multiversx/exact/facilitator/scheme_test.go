@@ -215,7 +215,11 @@ func TestSettle_Success(t *testing.T) {
 		},
 	}
 
-	resp, err := scheme.Settle(context.Background(), payload, types.PaymentRequirements{})
+	resp, err := scheme.Settle(context.Background(), payload, types.PaymentRequirements{
+		Extra: map[string]interface{}{
+			"assetTransferMethod": multiversx.TransferMethodDirect,
+		},
+	})
 	if err != nil {
 		t.Fatalf("Settle failed: %v", err)
 	}
@@ -240,7 +244,11 @@ func TestSettle_Failure(t *testing.T) {
 		Payload: map[string]interface{}{},
 	}
 
-	_, err := scheme.Settle(context.Background(), payload, types.PaymentRequirements{})
+	_, err := scheme.Settle(context.Background(), payload, types.PaymentRequirements{
+		Extra: map[string]interface{}{
+			"assetTransferMethod": multiversx.TransferMethodDirect,
+		},
+	})
 	if err == nil {
 		t.Fatal("Expected error on tx failure")
 	}
@@ -267,7 +275,11 @@ func TestSettle_Polling(t *testing.T) {
 	// We can't easily override it without changing the code, but we can verify it eventually returns.
 	// Since we are in a unit test, we should be careful about time.
 
-	resp, err := scheme.Settle(context.Background(), payload, types.PaymentRequirements{})
+	resp, err := scheme.Settle(context.Background(), payload, types.PaymentRequirements{
+		Extra: map[string]interface{}{
+			"assetTransferMethod": multiversx.TransferMethodDirect,
+		},
+	})
 	if err != nil {
 		t.Fatalf("Settle failed: %v", err)
 	}

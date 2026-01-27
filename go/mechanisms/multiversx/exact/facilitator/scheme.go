@@ -196,8 +196,21 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 	tx := relayedPayload.ToTransaction()
 
 	var hash string
-	if s.signer != nil {
-		// Native Relayed V3 (MIP-12)
+
+	// Default to relayed unless explicit "direct" transfer method is requested
+	transferMethod, _ := requirements.Extra["assetTransferMethod"].(string)
+
+	if transferMethod == multiversx.TransferMethodDirect {
+		// DIRECT TRANSFER (Version 1 usually)
+		hash, err = s.proxy.SendTransaction(ctx, &tx)
+
+	} else {
+		// RELAYED TRANSFER (Relayed V3) - Default
+		// Strictly require a signer for relayed transactions
+		if s.signer == nil {
+			return nil, x402.NewSettleError("configuration_error", relayedPayload.Sender, "multiversx", "", fmt.Errorf("signer required for relayed translation"))
+		}
+
 		addresses := s.signer.GetAddresses()
 		if len(addresses) == 0 {
 			return nil, x402.NewSettleError("no_signer_address", relayedPayload.Sender, "multiversx", "", errors.New("signer has no addresses"))
@@ -214,10 +227,6 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 		tx.RelayerSignature = sig
 
 		hash, err = s.signer.SendTransaction(ctx, &tx)
-
-	} else {
-		hash, err = s.proxy.SendTransaction(ctx, &tx)
-
 	}
 
 	if err != nil {
@@ -304,11 +313,6 @@ func (s *ExactMultiversXScheme) verifyViaSimulation(payload multiversx.ExactRela
 				}
 				break
 			}
-		}
-
-		// Ensure empty string if still missing (simulation requirement if not signed)
-		if tx.RelayerSignature == "" {
-			tx.RelayerSignature = ""
 		}
 	}
 

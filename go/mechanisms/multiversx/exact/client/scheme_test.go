@@ -139,7 +139,7 @@ func TestCreatePaymentPayload_EGLD_WithScFunction(t *testing.T) {
 		Network: "multiversx:D",
 		Extra: map[string]interface{}{
 			"scFunction": "buy",
-			"arguments":  []interface{}{"01", "02"},
+			"arguments":  []string{"01", "02"},
 		},
 	}
 

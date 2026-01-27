@@ -18,12 +18,14 @@ type ExactMultiversXScheme struct {
 	moneyParsers []x402.MoneyParser
 }
 
+// NewExactMultiversXScheme creates a new server scheme instance
 func NewExactMultiversXScheme() *ExactMultiversXScheme {
 	return &ExactMultiversXScheme{
 		moneyParsers: []x402.MoneyParser{},
 	}
 }
 
+// Scheme returns the scheme identifier
 func (s *ExactMultiversXScheme) Scheme() string {
 	return multiversx.SchemeExact
 }
@@ -34,6 +36,7 @@ func (s *ExactMultiversXScheme) RegisterMoneyParser(parser x402.MoneyParser) *Ex
 	return s
 }
 
+// ParsePrice converts an x402 generic price to a MultiversX-specific AssetAmount
 func (s *ExactMultiversXScheme) ParsePrice(price x402.Price, network x402.Network) (x402.AssetAmount, error) {
 	if pStruct, ok := price.(x402.AssetAmount); ok {
 		if pStruct.Asset == "" {
@@ -71,7 +74,7 @@ func (s *ExactMultiversXScheme) ParsePrice(price x402.Price, network x402.Networ
 		}
 	}
 
-	return s.defaultMoneyConversion(decimalAmount, network)
+	return s.defaultMoneyConversion(decimalAmount)
 }
 
 func (s *ExactMultiversXScheme) parseMoneyToDecimal(price x402.Price) (float64, error) {
@@ -98,7 +101,7 @@ func (s *ExactMultiversXScheme) parseMoneyToDecimal(price x402.Price) (float64, 
 	}
 }
 
-func (s *ExactMultiversXScheme) defaultMoneyConversion(amount float64, network x402.Network) (x402.AssetAmount, error) {
+func (s *ExactMultiversXScheme) defaultMoneyConversion(amount float64) (x402.AssetAmount, error) {
 	decimals := 18
 
 	bigFloat := new(big.Float).SetFloat64(amount)
@@ -114,6 +117,7 @@ func (s *ExactMultiversXScheme) defaultMoneyConversion(amount float64, network x
 	}, nil
 }
 
+// EnhancePaymentRequirements enriches the requirements with MultiversX-specific defaults (gas limit, transfer method)
 func (s *ExactMultiversXScheme) EnhancePaymentRequirements(
 	ctx context.Context,
 	requirements types.PaymentRequirements,

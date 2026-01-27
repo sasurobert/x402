@@ -11,19 +11,34 @@ const (
 	SchemeExact = "exact"
 
 	// Chain IDs
+	// ChainIDMainnet is the MultiversX Mainnet chain ID
 	ChainIDMainnet = "1"
-	ChainIDDevnet  = "D"
+	// ChainIDDevnet is the MultiversX Devnet chain ID
+	ChainIDDevnet = "D"
+	// ChainIDTestnet is the MultiversX Testnet chain ID
 	ChainIDTestnet = "T"
 
 	// Gas Constants
+
+	// GasLimitStandard is the base gas limit for standard transfers
 	GasLimitStandard = 50_000
-	GasLimitESDT     = 60_000_000
-	GasPriceDefault  = 1_000_000_000
+	// GasLimitESDT is the safe/default gas limit for ESDT transfers
+	GasLimitESDT = 60_000_000
+	// GasPriceDefault is the minimum gas price (1000000000)
+	GasPriceDefault = 1_000_000_000
+	// GasLimitRelayedV3Extra is the extra gas buffer for relayed V3 transactions
+	GasLimitRelayedV3Extra = 100_000
 
 	// Token Constants
+
+	// NativeTokenTicker is the ticker for the native EGLD token
 	NativeTokenTicker = "EGLD"
+
 	// Transfer Methods
-	TransferMethodESDT   = "esdt"
+
+	// TransferMethodESDT indicates an ESDT transfer (MultiESDTNFTTransfer)
+	TransferMethodESDT = "esdt"
+	// TransferMethodDirect indicates a direct EGLD transfer
 	TransferMethodDirect = "direct"
 )
 
@@ -46,37 +61,41 @@ type PaymentPayload struct {
 
 // ExactRelayedPayload defines the structure for a transaction that might be relayed
 type ExactRelayedPayload struct {
-	Nonce       uint64 `json:"nonce"`
-	Value       string `json:"value"`
-	Receiver    string `json:"receiver"`
-	Sender      string `json:"sender"`
-	GasPrice    uint64 `json:"gasPrice"`
-	GasLimit    uint64 `json:"gasLimit"`
-	Data        string `json:"data,omitempty"`
-	ChainID     string `json:"chainID"`
-	Version     uint32 `json:"version"`
-	Options     uint32 `json:"options,omitempty"`
-	Signature   string `json:"signature,omitempty"`
-	ValidAfter  uint64 `json:"validAfter,omitempty"`
-	ValidBefore uint64 `json:"validBefore,omitempty"`
+	Nonce            uint64 `json:"nonce"`
+	Value            string `json:"value"`
+	Receiver         string `json:"receiver"`
+	Sender           string `json:"sender"`
+	GasPrice         uint64 `json:"gasPrice"`
+	GasLimit         uint64 `json:"gasLimit"`
+	Data             string `json:"data,omitempty"`
+	ChainID          string `json:"chainID"`
+	Version          uint32 `json:"version"`
+	Options          uint32 `json:"options,omitempty"`
+	Signature        string `json:"signature,omitempty"`
+	Relayer          string `json:"relayer,omitempty"`
+	RelayerSignature string `json:"relayerSignature,omitempty"`
+	ValidAfter       uint64 `json:"validAfter,omitempty"`
+	ValidBefore      uint64 `json:"validBefore,omitempty"`
 }
 
 // ToMap converts the payload to a map for JSON marshaling
 func (p *ExactRelayedPayload) ToMap() map[string]interface{} {
 	return map[string]interface{}{
-		"nonce":       p.Nonce,
-		"value":       p.Value,
-		"receiver":    p.Receiver,
-		"sender":      p.Sender,
-		"gasPrice":    p.GasPrice,
-		"gasLimit":    p.GasLimit,
-		"data":        p.Data,
-		"chainID":     p.ChainID,
-		"version":     p.Version,
-		"options":     p.Options,
-		"signature":   p.Signature,
-		"validAfter":  p.ValidAfter,
-		"validBefore": p.ValidBefore,
+		"nonce":            p.Nonce,
+		"value":            p.Value,
+		"receiver":         p.Receiver,
+		"sender":           p.Sender,
+		"gasPrice":         p.GasPrice,
+		"gasLimit":         p.GasLimit,
+		"data":             p.Data,
+		"chainID":          p.ChainID,
+		"version":          p.Version,
+		"options":          p.Options,
+		"signature":        p.Signature,
+		"relayer":          p.Relayer,
+		"relayerSignature": p.RelayerSignature,
+		"validAfter":       p.ValidAfter,
+		"validBefore":      p.ValidBefore,
 	}
 }
 
@@ -138,6 +157,14 @@ func PayloadFromMap(data map[string]interface{}) (*ExactRelayedPayload, error) {
 		p.Signature = val
 	}
 
+	if val, ok := data["relayer"].(string); ok {
+		p.Relayer = val
+	}
+
+	if val, ok := data["relayerSignature"].(string); ok {
+		p.RelayerSignature = val
+	}
+
 	if val, ok := data["validAfter"].(uint64); ok {
 		p.ValidAfter = val
 	} else if val, ok := data["validAfter"].(float64); ok {
@@ -156,20 +183,24 @@ func PayloadFromMap(data map[string]interface{}) (*ExactRelayedPayload, error) {
 // ToTransaction converts the payload to an SDK Transaction struct
 func (p *ExactRelayedPayload) ToTransaction() transaction.FrontendTransaction {
 	return transaction.FrontendTransaction{
-		Nonce:     p.Nonce,
-		Value:     p.Value,
-		Receiver:  p.Receiver,
-		Sender:    p.Sender,
-		GasPrice:  p.GasPrice,
-		GasLimit:  p.GasLimit,
-		Data:      []byte(p.Data),
-		ChainID:   p.ChainID,
-		Version:   p.Version,
-		Options:   p.Options,
-		Signature: p.Signature,
+		Nonce:            p.Nonce,
+		Value:            p.Value,
+		Receiver:         p.Receiver,
+		Sender:           p.Sender,
+		GasPrice:         p.GasPrice,
+		GasLimit:         p.GasLimit,
+		Data:             []byte(p.Data),
+		ChainID:          p.ChainID,
+		Version:          p.Version,
+		Options:          p.Options,
+		Signature:        p.Signature,
+		RelayerAddr:      p.Relayer,
+		RelayerSignature: p.RelayerSignature,
 	}
 }
 
+// CheckBigInt compares a string value against an expected string value
+// Returns true if valStr >= expected, false otherwise or on error
 func CheckBigInt(valStr string, expected string) bool {
 	val, ok := new(big.Int).SetString(valStr, 10)
 	if !ok {

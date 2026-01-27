@@ -59,6 +59,7 @@ func GetAPIURL(chainID string) string {
 	}
 }
 
+// IsValidAddress checks if the address is a valid MultiversX Bech32 address
 func IsValidAddress(address string) bool {
 	if len(address) != 62 {
 		return false
@@ -74,7 +75,7 @@ func IsValidHex(s string) bool {
 	return err == nil
 }
 
-// BytesToHex helper
+// BytesToHex converts a byte slice to a hex string
 func BytesToHex(b []byte) string {
 	return hex.EncodeToString(b)
 }
@@ -89,6 +90,7 @@ func CheckAmount(amount string) (*big.Int, error) {
 	return i, nil
 }
 
+// CalculateGasLimit estimates the gas limit for a transaction
 func CalculateGasLimit(data []byte, numTransfers int) uint64 {
 	const BaseCost = 50000
 	const GasPerByte = 1500
@@ -101,20 +103,7 @@ func CalculateGasLimit(data []byte, numTransfers int) uint64 {
 		RelayedCost
 }
 
-// SerializeTransaction creates the bytes to be signed
-func SerializeTransaction(tx transaction.FrontendTransaction) ([]byte, error) {
-	m := map[string]interface{}{
-		"nonce":    tx.Nonce,
-		"value":    tx.Value,
-		"receiver": tx.Receiver,
-		"sender":   tx.Sender,
-		"gasPrice": tx.GasPrice,
-		"gasLimit": tx.GasLimit,
-		"data":     string(tx.Data),
-		"chainID":  tx.ChainID,
-		"version":  tx.Version,
-		"options":  tx.Options,
-	}
-
-	return json.Marshal(m)
+// SerializeTransaction serializes a transaction to its canonical JSON format for signing
+func SerializeTransaction(tx *transaction.FrontendTransaction) ([]byte, error) {
+	return json.Marshal(tx)
 }

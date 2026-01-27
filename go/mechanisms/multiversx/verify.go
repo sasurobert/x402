@@ -13,15 +13,10 @@ import (
 	"github.com/coinbase/x402/go/types"
 )
 
-// VerifyPayment verifies the payment payload
+// VerifyPayment performs strict verification of the payment payload against requirements
+// It checks signature validity, expiration, and payload content matching
 func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirements types.PaymentRequirements, simulator func(ExactRelayedPayload) (string, error)) (bool, error) {
 	// 1. Static Checks
-	// Receiver matches PayTo (unless ESDT transfer where internal logic handles it, or Relayer paying gas)
-	// Actually, payload.Receiver is who gets the money in Direct transfer.
-	// For ESDT, payload.Receiver is Self (Sender).
-	// So we can't strictly check payload.Receiver == requirements.PayTo universally without knowing the type.
-	// However, the caller (Facilitator) does component-level checks.
-	// Here we verify the signature primarily.
 
 	// 2. Signature Presence
 	if payload.Signature == "" {
@@ -30,8 +25,12 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 
 	// 3. Local Ed25519 Verification
 	tx := payload.ToTransaction()
+	// Clear signatures for verification as they were not part of the signed message
+	tx.Signature = ""
+	tx.RelayerSignature = ""
+
 	// Serialize as canonical JSON for verification
-	msgBytes, err := SerializeTransaction(tx)
+	msgBytes, err := SerializeTransaction(&tx)
 	if err != nil {
 		return false, x402.NewVerifyError("serialization_failed", payload.Sender, "multiversx", err)
 	}
@@ -57,14 +56,12 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 		return false, x402.NewVerifyError("invalid_public_key_length", payload.Sender, "multiversx", fmt.Errorf("expected 32 bytes, got %d", len(pubKeyBytes)))
 	}
 
-	if ed25519.Verify(pubKeyBytes, msgBytes, sigBytes) {
-		// Valid Signature!
-		return true, nil
+	if !ed25519.Verify(pubKeyBytes, msgBytes, sigBytes) {
+		return false, x402.NewVerifyError(x402.ErrCodeSignatureInvalid, payload.Sender, "multiversx", nil)
 	}
 
-	// 4. Fallback to Simulation
-	// If local verify fails, it MIGHT be because our serialization doesn't match the node's
-	// or it's a Smart Contract Wallet.
+	// 4. Verification via Simulation
+	// We simulation ALL transactions to ensure validity (Smart Contract Wallets, balances, nonces)
 	hash, err := simulator(payload)
 	if err != nil {
 		// If simulation fails, it's definitely invalid

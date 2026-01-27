@@ -23,6 +23,16 @@ type MockSigner struct {
 func (m *MockSigner) Address() string {
 	return m.addr
 }
+func (s *MockSigner) PrivateKey() []byte {
+	// Valid 32-byte seed
+	return []byte{
+		0x41, 0x3f, 0x42, 0x57, 0x5f, 0x7f, 0x26, 0xfa,
+		0xd3, 0x31, 0x7a, 0x77, 0x87, 0x71, 0x21, 0x2f,
+		0xdb, 0x80, 0x24, 0x58, 0x50, 0x98, 0x1e, 0x48,
+		0xb5, 0x8a, 0x4f, 0x25, 0xe3, 0x44, 0xe8, 0xf9,
+	}
+}
+
 func (m *MockSigner) Sign(ctx context.Context, message []byte) ([]byte, error) {
 	return []byte("signature"), nil
 }
@@ -89,6 +99,9 @@ func TestCreatePaymentPayload_EGLD(t *testing.T) {
 		Amount:  "100",
 		Asset:   "EGLD",
 		Network: "multiversx:D",
+		Extra: map[string]interface{}{
+			"relayer": testSender,
+		},
 	}
 
 	payload, err := scheme.CreatePaymentPayload(context.Background(), req)
@@ -129,7 +142,8 @@ func TestCreatePaymentPayload_EGLD_WithScFunction(t *testing.T) {
 		Network: "multiversx:D",
 		Extra: map[string]interface{}{
 			"scFunction": "buy",
-			"arguments":  []interface{}{"01", "02"},
+			"arguments":  []string{"01", "02"},
+			"relayer":    testSender,
 		},
 	}
 
@@ -161,6 +175,9 @@ func TestCreatePaymentPayload_ESDT(t *testing.T) {
 		Amount:  "100",
 		Asset:   testAsset,
 		Network: "multiversx:D",
+		Extra: map[string]interface{}{
+			"relayer": testSender,
+		},
 	}
 
 	payload, err := scheme.CreatePaymentPayload(context.Background(), req)
@@ -204,6 +221,7 @@ func TestCreatePaymentPayload_ESDT_WithResourceID(t *testing.T) {
 		Network: "multiversx:D",
 		Extra: map[string]interface{}{
 			"scFunction": "inv_123",
+			"relayer":    testSender,
 		},
 	}
 
@@ -236,6 +254,9 @@ func TestCreatePaymentPayload_EGLD_Alias(t *testing.T) {
 		Amount:  "100",
 		Asset:   "EGLD-000000", // Should be treated as EGLD if handled or ESDT token otherwise
 		Network: "multiversx:D",
+		Extra: map[string]interface{}{
+			"relayer": testSender,
+		},
 	}
 
 	payload, err := scheme.CreatePaymentPayload(context.Background(), req)

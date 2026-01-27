@@ -24,19 +24,24 @@ import (
 	"github.com/coinbase/x402/go/types"
 )
 
-// ProxyWithStatus extends the base Proxy interface with processing status check
-type ProxyWithStatus interface {
-	blockchain.Proxy
-	ProcessTransactionStatus(ctx context.Context, txHash string) (transaction.TxStatus, error)
+// Proxy defines the interface for interacting with MultiversX blockchain
+type Proxy interface {
+	GetTransactionStatus(ctx context.Context, hash string) (string, error)
+	GetTransactionInfo(ctx context.Context, hash string) (*data.TransactionInfo, error)
+	GetTransactionInfoWithResults(ctx context.Context, hash string) (*data.TransactionInfo, error)
+	GetAccount(ctx context.Context, address core.AddressHandler) (*data.Account, error)
+	SendTransaction(ctx context.Context, tx *transaction.FrontendTransaction) (string, error)
 }
 
 // ExactMultiversXScheme implements SchemeNetworkFacilitator
 type ExactMultiversXScheme struct {
 	config multiversx.NetworkConfig
-	proxy  blockchain.Proxy
+	proxy  Proxy
+	signer multiversx.FacilitatorMultiversXSigner
 }
 
-func NewExactMultiversXScheme(apiUrl string) *ExactMultiversXScheme {
+// NewExactMultiversXScheme creates a new facilitator scheme instance
+func NewExactMultiversXScheme(apiUrl string, signer multiversx.FacilitatorMultiversXSigner) (*ExactMultiversXScheme, error) {
 	args := blockchain.ArgsProxy{
 		ProxyURL:            apiUrl,
 		Client:              nil,
@@ -46,31 +51,47 @@ func NewExactMultiversXScheme(apiUrl string) *ExactMultiversXScheme {
 		EntityType:          core.Proxy,
 		CacheExpirationTime: time.Minute,
 	}
-	proxy, _ := blockchain.NewProxy(args)
+	proxy, err := blockchain.NewProxy(args)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create proxy: %w", err)
+	}
+
+	p, ok := interface{}(proxy).(Proxy)
+	if !ok {
+		return nil, fmt.Errorf("proxy does not implement the required interface")
+	}
 
 	return &ExactMultiversXScheme{
 		config: multiversx.NetworkConfig{ApiUrl: apiUrl},
-		proxy:  proxy,
-	}
+		proxy:  p,
+		signer: signer,
+	}, nil
 }
 
+// Scheme returns the scheme identifier ("exact")
 func (s *ExactMultiversXScheme) Scheme() string {
 	return multiversx.SchemeExact
 }
 
+// CaipFamily returns the CAIP network family ("multiversx:*")
 func (s *ExactMultiversXScheme) CaipFamily() string {
 	return "multiversx:*"
 }
 
+// GetExtra returns any extra configuration (none for this scheme)
 func (s *ExactMultiversXScheme) GetExtra(network x402.Network) map[string]interface{} {
 	return nil
 }
 
+// GetSigners returns the addresses of available signers
 func (s *ExactMultiversXScheme) GetSigners(network x402.Network) []string {
-	// TODO: If the facilitator holds a wallet to pay gas, return its address here.
+	if s.signer != nil {
+		return s.signer.GetAddresses()
+	}
 	return []string{}
 }
 
+// Verify validates a payment payload against requirements
 func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.PaymentPayload, requirements types.PaymentRequirements) (*x402.VerifyResponse, error) {
 	relayedPayloadPtr, err := multiversx.PayloadFromMap(payload.Payload)
 	if err != nil {
@@ -163,6 +184,8 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 	}, nil
 }
 
+// Settle executes the payment defined in the payload
+// It handles both Direct and Relayed V3 transactions
 func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.PaymentPayload, requirements types.PaymentRequirements) (*x402.SettleResponse, error) {
 	relayedPayloadPtr, err := multiversx.PayloadFromMap(payload.Payload)
 	if err != nil {
@@ -172,7 +195,39 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 
 	tx := relayedPayload.ToTransaction()
 
-	hash, err := s.proxy.SendTransaction(ctx, &tx)
+	var hash string
+
+	// Default to relayed unless explicit "direct" transfer method is requested
+	transferMethod, _ := requirements.Extra["assetTransferMethod"].(string)
+
+	if transferMethod != multiversx.TransferMethodDirect {
+		// RELAYED TRANSFER (Relayed V3) - Default
+		// Strictly require a signer for relayed transactions
+		if s.signer == nil {
+			return nil, x402.NewSettleError("configuration_error", relayedPayload.Sender, "multiversx", "", fmt.Errorf("signer required for relayed translation"))
+		}
+
+		addresses := s.signer.GetAddresses()
+		if len(addresses) == 0 {
+			return nil, x402.NewSettleError("no_signer_address", relayedPayload.Sender, "multiversx", "", errors.New("signer has no addresses"))
+		}
+		facilitatorAddr := addresses[0]
+
+		tx.RelayerAddr = facilitatorAddr
+		tx.Version = 2 // Relayed V3 uses version 2
+
+		// Store signature in temporary error variable to avoid shadowing 'err'
+		var sig string
+		var signErr error
+		sig, signErr = s.signer.Sign(ctx, &tx)
+		if signErr != nil {
+			return nil, x402.NewSettleError("signing_failed", relayedPayload.Sender, "multiversx", "", signErr)
+		}
+		tx.RelayerSignature = sig
+	}
+
+	hash, err = s.proxy.SendTransaction(ctx, &tx)
+
 	if err != nil {
 		return nil, x402.NewSettleError("broadcast_failed", relayedPayload.Sender, "multiversx", "", err)
 	}
@@ -187,13 +242,13 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 	}, nil
 }
 
-// waitForTx polls the transaction status using direct API usage since Proxy interface lacks it
+// waitForTx polls the transaction status using the proxy
 func (s *ExactMultiversXScheme) waitForTx(ctx context.Context, txHash string) error {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
-	// Wait up to 60 seconds
-	timeout := time.After(60 * time.Second)
+	// Wait up to 120 seconds
+	timeout := time.After(120 * time.Second)
 
 	for {
 		select {
@@ -208,13 +263,14 @@ func (s *ExactMultiversXScheme) waitForTx(ctx context.Context, txHash string) er
 			}
 
 			switch status {
-			case "success", "successful":
+			case "success", "successful", "executed":
 				return nil
-			case "fail", "invalid":
+			case "fail", "failed", "invalid":
 				return fmt.Errorf("transaction failed with status: %s", status)
-			case "pending", "processing", "received":
+			case "pending", "processing", "received", "partially-executed":
 				continue
 			default:
+				// t.Logf("Unknown transaction status: %s", status)
 				continue
 			}
 		}
@@ -223,24 +279,48 @@ func (s *ExactMultiversXScheme) waitForTx(ctx context.Context, txHash string) er
 
 // getTransactionStatus fetches status via the proxy engine
 func (s *ExactMultiversXScheme) getTransactionStatus(ctx context.Context, txHash string) (string, error) {
-	proxyWithStatus, ok := s.proxy.(ProxyWithStatus)
-	if !ok {
-		return "", fmt.Errorf("proxy implementation does not support status checking")
-	}
-
-	status, err := proxyWithStatus.ProcessTransactionStatus(ctx, txHash)
+	status, err := s.proxy.GetTransactionStatus(ctx, txHash)
 	if err != nil {
 		return "", err
 	}
 
-	return string(status), nil
+	if status == "fail" || status == "failed" || status == "invalid" {
+		txInfo, err := s.proxy.GetTransactionInfo(ctx, txHash)
+		if err == nil && txInfo.Error != "" {
+
+			return fmt.Sprintf("%s (error: %s)", status, txInfo.Error), nil
+		}
+	}
+
+	return status, nil
 }
 
 func (s *ExactMultiversXScheme) verifyViaSimulation(payload multiversx.ExactRelayedPayload) (string, error) {
 	tx := payload.ToTransaction()
+	if tx.Version >= 2 && tx.RelayerAddr != "" && s.signer != nil {
+		// Attempt to sign as relayer if we hold the key
+		addresses := s.signer.GetAddresses()
+		for _, addr := range addresses {
+			if addr == tx.RelayerAddr {
+				// We are the relayer
+				sig, err := s.signer.Sign(context.TODO(), &tx)
+				if err != nil {
+					return "", fmt.Errorf("failed to sign as relayer: %w", err)
+				}
+				if tx.RelayerSignature == "" {
+					tx.RelayerSignature = sig
+				}
+				break
+			}
+		}
+	}
+
+	txBytes, err := json.Marshal(tx)
+	if err != nil {
+		return "", err
+	}
 
 	url := fmt.Sprintf("%s/transaction/simulate", s.config.ApiUrl)
-	txBytes, _ := json.Marshal(&tx)
 
 	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(txBytes))
 	if err != nil {

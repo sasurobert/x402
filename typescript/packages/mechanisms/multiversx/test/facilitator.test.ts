@@ -23,6 +23,9 @@ describe('ExactMultiversXFacilitator', () => {
   })
 
   it('should verify a valid EGLD payload', async () => {
+    // Mock signature verification since we use fake signatures in tests
+    vi.spyOn(facilitator as any, 'verifySignature').mockResolvedValue({ isValid: true })
+
     const payload: ExactMultiversXPayload = {
       nonce: 10,
       value: '1000',
@@ -181,6 +184,9 @@ describe('ExactMultiversXFacilitator', () => {
   })
 
   it('should verify a valid ESDT payload', async () => {
+    // Mock signature verification since we use fake signatures in tests
+    vi.spyOn(facilitator as any, 'verifySignature').mockResolvedValue({ isValid: true })
+
     const asset = 'TEST-123456'
     const amount = '1000'
     const amountHex = BigInt(amount).toString(16).padStart(2, '0')

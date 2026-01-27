@@ -29,12 +29,14 @@ type ExactMultiversXScheme struct {
 // Option defines functional options for ExactMultiversXScheme
 type Option func(*ExactMultiversXScheme)
 
+// WithProxy configures a custom blockchain proxy
 func WithProxy(proxy blockchain.Proxy) Option {
 	return func(s *ExactMultiversXScheme) {
 		s.proxy = proxy
 	}
 }
 
+// NewExactMultiversXScheme creates a new client scheme instance
 func NewExactMultiversXScheme(signer multiversx.ClientMultiversXSigner, network x402.Network, opts ...Option) (*ExactMultiversXScheme, error) {
 	chainID, err := multiversx.GetMultiversXChainId(string(network))
 	if err != nil {
@@ -70,10 +72,12 @@ func NewExactMultiversXScheme(signer multiversx.ClientMultiversXSigner, network 
 	return s, nil
 }
 
+// Scheme returns the scheme identifier
 func (s *ExactMultiversXScheme) Scheme() string {
 	return multiversx.SchemeExact
 }
 
+// CreatePaymentPayload constructs the payment payload for a given requirement
 func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requirements types.PaymentRequirements) (types.PaymentPayload, error) {
 	if requirements.PayTo == "" {
 		return types.PaymentPayload{}, fmt.Errorf("PayTo is required")
@@ -200,33 +204,7 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 	}
 
 	// Sign transaction using SDK builder
-	// Note: The original code used `s.signer` which is `multiversx.ClientMultiversXSigner`.
-	// The instruction implies using `c.privKeyVal` which is not available in this scope (`s`).
-	// Assuming `s.signer` can provide the private key or a compatible crypto holder.
-	// For now, this block is a placeholder based on the instruction's provided snippet.
-	// A `SimpleCryptoHolder` would typically be initialized with a private key.
-	// This change requires `ExactMultiversXScheme` to have access to the private key.
-	// For the purpose of this edit, we'll assume `s.signer` can be adapted or `privKeyVal`
-	// is made available, or that `s.signer` itself implements `CryptoHolder`.
-	// As the instruction provides `c.privKeyVal`, this implies `ExactMultiversXScheme`
-	// should be `c` and have a `privKeyVal` field. This is a significant structural change
-	// not fully covered by the instruction's scope.
-	// For a faithful edit, I'll use `s.signer` if it implements `CryptoHolder` or
-	// assume `s` has a `privKeyVal` field. Given `s.signer` is `ClientMultiversXSigner`,
-	// it's unlikely to directly be a `CryptoHolder`.
-	// The instruction's snippet uses `c.privKeyVal`, implying `c` is the receiver.
-	// Let's assume `s` (the receiver) has a `privKeyVal` field for this edit.
-	// This is a necessary assumption to make the provided snippet syntactically valid
-	// and fulfill the instruction.
 
-	// Placeholder for `privKeyVal` - this would need to be added to `ExactMultiversXScheme` struct
-	// and initialized during `NewExactMultiversXScheme`.
-	// For the sake of making the provided snippet syntactically correct,
-	// I'll assume `s.privKeyVal` exists.
-	// If `s.signer` is intended to be the `CryptoHolder`, then `multiversx.NewSimpleCryptoHolder`
-	// would not be needed, and `s.signer` would be passed directly.
-	// If `s.signer` is intended to be the `CryptoHolder`, the code would be different.
-	// Following the instruction's snippet as closely as possible:
 	cryptoHolder, err := multiversx.NewSimpleCryptoHolderFromBytes(s.signer.PrivateKey())
 	if err != nil {
 		return types.PaymentPayload{}, fmt.Errorf("failed to create crypto holder: %w", err)

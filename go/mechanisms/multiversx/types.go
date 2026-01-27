@@ -11,20 +11,34 @@ const (
 	SchemeExact = "exact"
 
 	// Chain IDs
+	// ChainIDMainnet is the MultiversX Mainnet chain ID
 	ChainIDMainnet = "1"
-	ChainIDDevnet  = "D"
+	// ChainIDDevnet is the MultiversX Devnet chain ID
+	ChainIDDevnet = "D"
+	// ChainIDTestnet is the MultiversX Testnet chain ID
 	ChainIDTestnet = "T"
 
 	// Gas Constants
-	GasLimitStandard       = 50_000
-	GasLimitESDT           = 60_000_000
-	GasPriceDefault        = 1_000_000_000
+
+	// GasLimitStandard is the base gas limit for standard transfers
+	GasLimitStandard = 50_000
+	// GasLimitESDT is the safe/default gas limit for ESDT transfers
+	GasLimitESDT = 60_000_000
+	// GasPriceDefault is the minimum gas price (1000000000)
+	GasPriceDefault = 1_000_000_000
+	// GasLimitRelayedV3Extra is the extra gas buffer for relayed V3 transactions
 	GasLimitRelayedV3Extra = 100_000
 
 	// Token Constants
+
+	// NativeTokenTicker is the ticker for the native EGLD token
 	NativeTokenTicker = "EGLD"
+
 	// Transfer Methods
-	TransferMethodESDT   = "esdt"
+
+	// TransferMethodESDT indicates an ESDT transfer (MultiESDTNFTTransfer)
+	TransferMethodESDT = "esdt"
+	// TransferMethodDirect indicates a direct EGLD transfer
 	TransferMethodDirect = "direct"
 )
 
@@ -185,6 +199,8 @@ func (p *ExactRelayedPayload) ToTransaction() transaction.FrontendTransaction {
 	}
 }
 
+// CheckBigInt compares a string value against an expected string value
+// Returns true if valStr >= expected, false otherwise or on error
 func CheckBigInt(valStr string, expected string) bool {
 	val, ok := new(big.Int).SetString(valStr, 10)
 	if !ok {

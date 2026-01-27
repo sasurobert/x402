@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math/big"
 	"net/http"
 	"strings"
@@ -41,6 +40,7 @@ type ExactMultiversXScheme struct {
 	signer multiversx.FacilitatorMultiversXSigner
 }
 
+// NewExactMultiversXScheme creates a new facilitator scheme instance
 func NewExactMultiversXScheme(apiUrl string, signer multiversx.FacilitatorMultiversXSigner) (*ExactMultiversXScheme, error) {
 	args := blockchain.ArgsProxy{
 		ProxyURL:            apiUrl,
@@ -68,18 +68,22 @@ func NewExactMultiversXScheme(apiUrl string, signer multiversx.FacilitatorMultiv
 	}, nil
 }
 
+// Scheme returns the scheme identifier ("exact")
 func (s *ExactMultiversXScheme) Scheme() string {
 	return multiversx.SchemeExact
 }
 
+// CaipFamily returns the CAIP network family ("multiversx:*")
 func (s *ExactMultiversXScheme) CaipFamily() string {
 	return "multiversx:*"
 }
 
+// GetExtra returns any extra configuration (none for this scheme)
 func (s *ExactMultiversXScheme) GetExtra(network x402.Network) map[string]interface{} {
 	return nil
 }
 
+// GetSigners returns the addresses of available signers
 func (s *ExactMultiversXScheme) GetSigners(network x402.Network) []string {
 	if s.signer != nil {
 		return s.signer.GetAddresses()
@@ -87,6 +91,7 @@ func (s *ExactMultiversXScheme) GetSigners(network x402.Network) []string {
 	return []string{}
 }
 
+// Verify validates a payment payload against requirements
 func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.PaymentPayload, requirements types.PaymentRequirements) (*x402.VerifyResponse, error) {
 	relayedPayloadPtr, err := multiversx.PayloadFromMap(payload.Payload)
 	if err != nil {
@@ -179,6 +184,8 @@ func (s *ExactMultiversXScheme) Verify(ctx context.Context, payload types.Paymen
 	}, nil
 }
 
+// Settle executes the payment defined in the payload
+// It handles both Direct and Relayed V3 transactions
 func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.PaymentPayload, requirements types.PaymentRequirements) (*x402.SettleResponse, error) {
 	relayedPayloadPtr, err := multiversx.PayloadFromMap(payload.Payload)
 	if err != nil {
@@ -191,40 +198,32 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 	var hash string
 	if s.signer != nil {
 		// Native Relayed V3 (MIP-12)
-		// 1. Fetch facilitator (relayer) addresses
 		addresses := s.signer.GetAddresses()
 		if len(addresses) == 0 {
 			return nil, x402.NewSettleError("no_signer_address", relayedPayload.Sender, "multiversx", "", errors.New("signer has no addresses"))
 		}
 		facilitatorAddr := addresses[0]
 
-		// 2. Prepare Relayed V3 transaction
-		// The inner transaction is what the client signed. We just add relayer info.
-		// We MUST NOT change the original sender, receiver, value, or data.
-		// We also must not change the GasLimit if it already includes the relay fee.
 		tx.RelayerAddr = facilitatorAddr
 		tx.Version = 2 // Relayed V3 uses version 2
 
-		// 3. Faciliator (Relayer) signs the transaction
 		sig, err := s.signer.Sign(ctx, &tx)
 		if err != nil {
 			return nil, x402.NewSettleError("signing_failed", relayedPayload.Sender, "multiversx", "", err)
 		}
 		tx.RelayerSignature = sig
 
-		// 4. Send the Native Relayed V3 transaction
 		hash, err = s.signer.SendTransaction(ctx, &tx)
-		log.Printf("[MVX] RelayedV3 Tx Sent. Hash: %s", hash)
+
 	} else {
 		hash, err = s.proxy.SendTransaction(ctx, &tx)
-		log.Printf("[MVX] Direct Tx Sent. Hash: %s", hash)
+
 	}
 
 	if err != nil {
 		return nil, x402.NewSettleError("broadcast_failed", relayedPayload.Sender, "multiversx", "", err)
 	}
 
-	log.Printf("[MVX] Waiting for tx: %s", hash)
 	if err := s.waitForTx(ctx, hash); err != nil {
 		return nil, x402.NewSettleError("tx_failed", relayedPayload.Sender, "multiversx", hash, err)
 	}
@@ -280,12 +279,11 @@ func (s *ExactMultiversXScheme) getTransactionStatus(ctx context.Context, txHash
 	if status == "fail" || status == "failed" || status == "invalid" {
 		txInfo, err := s.proxy.GetTransactionInfo(ctx, txHash)
 		if err == nil && txInfo.Error != "" {
-			log.Printf("[MVX] Tx %s Status: %s (error: %s)", txHash, status, txInfo.Error)
+
 			return fmt.Sprintf("%s (error: %s)", status, txInfo.Error), nil
 		}
 	}
 
-	log.Printf("[MVX] Tx %s Status: %s", txHash, status)
 	return status, nil
 }
 
@@ -318,7 +316,6 @@ func (s *ExactMultiversXScheme) verifyViaSimulation(payload multiversx.ExactRela
 	if err != nil {
 		return "", err
 	}
-	fmt.Printf("[MVX] Simulation JSON: %s\n", string(txBytes))
 
 	url := fmt.Sprintf("%s/transaction/simulate", s.config.ApiUrl)
 

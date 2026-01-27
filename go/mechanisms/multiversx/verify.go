@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -14,15 +13,10 @@ import (
 	"github.com/coinbase/x402/go/types"
 )
 
-// VerifyPayment verifies the payment payload
+// VerifyPayment performs strict verification of the payment payload against requirements
+// It checks signature validity, expiration, and payload content matching
 func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirements types.PaymentRequirements, simulator func(ExactRelayedPayload) (string, error)) (bool, error) {
 	// 1. Static Checks
-	// Receiver matches PayTo (unless ESDT transfer where internal logic handles it, or Relayer paying gas)
-	// Actually, payload.Receiver is who gets the money in Direct transfer.
-	// For ESDT, payload.Receiver is Self (Sender).
-	// So we can't strictly check payload.Receiver == requirements.PayTo universally without knowing the type.
-	// However, the caller (Facilitator) does component-level checks.
-	// Here we verify the signature primarily.
 
 	// 2. Signature Presence
 	if payload.Signature == "" {
@@ -31,8 +25,12 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 
 	// 3. Local Ed25519 Verification
 	tx := payload.ToTransaction()
+	// Clear signatures for verification as they were not part of the signed message
+	tx.Signature = ""
+	tx.RelayerSignature = ""
+
 	// Serialize as canonical JSON for verification
-	msgBytes, err := json.Marshal(tx)
+	msgBytes, err := SerializeTransaction(&tx)
 	if err != nil {
 		return false, x402.NewVerifyError("serialization_failed", payload.Sender, "multiversx", err)
 	}

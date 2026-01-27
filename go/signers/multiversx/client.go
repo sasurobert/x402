@@ -10,7 +10,7 @@ import (
 	"github.com/multiversx/mx-sdk-go/data"
 )
 
-// ClientSigner implements multiversx.ClientMultiversXSigner
+// ClientSigner implements multiversx.ClientMultiversXSigner using local Ed25519 keys
 type ClientSigner struct {
 	privKey ed25519.PrivateKey
 	address string
@@ -41,7 +41,7 @@ func NewClientSignerFromPrivateKey(privKeyHex string) (*ClientSigner, error) {
 	}, nil
 }
 
-// Ensure ClientSigner implements ClientMultiversXSigner
+// Ensure ClientSigner implements ClientMultiversXSigner interface
 var _ multiversx.ClientMultiversXSigner = (*ClientSigner)(nil)
 
 // Address returns the bech32 address of the signer

@@ -43,7 +43,7 @@ func TestVerifyPayment(t *testing.T) {
 
 	// Sign locally
 	tx := payload.ToTransaction()
-	txBytes, err := SerializeTransaction(tx)
+	txBytes, err := SerializeTransaction(&tx)
 	if err != nil {
 		t.Fatalf("Failed to serialize tx: %v", err)
 	}

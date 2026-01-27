@@ -21,6 +21,25 @@ import (
 	"github.com/coinbase/x402/go/types"
 )
 
+// MockSigner implements FacilitatorMultiversXSigner
+type MockSigner struct{}
+
+func (s *MockSigner) GetAddresses() []string {
+	return []string{"erd1test"}
+}
+func (s *MockSigner) Sign(ctx context.Context, tx *transaction.FrontendTransaction) (string, error) {
+	return "mock_signature", nil
+}
+func (s *MockSigner) SendTransaction(ctx context.Context, tx *transaction.FrontendTransaction) (string, error) {
+	return "mock_tx_hash", nil
+}
+func (s *MockSigner) GetAccount(ctx context.Context, address string) (*data.Account, error) {
+	return &data.Account{}, nil
+}
+func (s *MockSigner) GetTransactionStatus(ctx context.Context, txHash string) (string, error) {
+	return "success", nil
+}
+
 // Keys
 func TestVerify_EGLD_Direct_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -29,18 +48,15 @@ func TestVerify_EGLD_Direct_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	scheme := NewExactMultiversXScheme(server.URL)
+	scheme, _ := NewExactMultiversXScheme(server.URL, &MockSigner{})
 
-	// Keys
 	pubKey, privKey, _ := ed25519.GenerateKey(nil)
-	// Create Sender Address
 	senderAddr, _ := data.NewAddressFromBytes(pubKey).AddressAsBech32String()
 
-	// Payload
 	payload := multiversx.ExactRelayedPayload{
 		Nonce:       10,
 		Value:       "1000",
-		Receiver:    senderAddr, // Sending to self for test
+		Receiver:    senderAddr,
 		Sender:      senderAddr,
 		GasPrice:    1000000000,
 		GasLimit:    50000,
@@ -52,18 +68,15 @@ func TestVerify_EGLD_Direct_Success(t *testing.T) {
 		ValidBefore: uint64(time.Now().Unix() + 3600),
 	}
 
-	// Sign
 	tx := payload.ToTransaction()
-	txBytes, _ := multiversx.SerializeTransaction(tx)
+	txBytes, _ := multiversx.SerializeTransaction(&tx)
 	sig := ed25519.Sign(privKey, txBytes)
 	payload.Signature = hex.EncodeToString(sig)
 
-	// Wrap
 	pBytes, _ := json.Marshal(payload)
 	var pMap map[string]interface{}
 	json.Unmarshal(pBytes, &pMap)
 
-	// Req
 	req := types.PaymentRequirements{
 		PayTo:  senderAddr,
 		Amount: "1000",
@@ -85,7 +98,7 @@ func TestVerify_EGLD_Direct_Success(t *testing.T) {
 func TestVerify_AssetMismatch(t *testing.T) {
 	server := httptest.NewServer(nil)
 	defer server.Close()
-	scheme := NewExactMultiversXScheme(server.URL)
+	scheme, _ := NewExactMultiversXScheme(server.URL, &MockSigner{})
 
 	pubKey, privKey, _ := ed25519.GenerateKey(nil)
 	// Create Sender Address
@@ -102,7 +115,7 @@ func TestVerify_AssetMismatch(t *testing.T) {
 		Version:  1,
 	}
 	tx := payload.ToTransaction()
-	txBytes, _ := multiversx.SerializeTransaction(tx)
+	txBytes, _ := multiversx.SerializeTransaction(&tx)
 	sig := ed25519.Sign(privKey, txBytes)
 	payload.Signature = hex.EncodeToString(sig)
 
@@ -113,7 +126,7 @@ func TestVerify_AssetMismatch(t *testing.T) {
 	// Req expects wrong amount
 	req := types.PaymentRequirements{
 		PayTo:  senderAddr,
-		Amount: "2000", // Mismatch
+		Amount: "2000",
 		Asset:  multiversx.NativeTokenTicker,
 		Extra: map[string]interface{}{
 			"assetTransferMethod": multiversx.TransferMethodDirect,
@@ -142,16 +155,16 @@ func (m *MockProxy) SendTransaction(ctx context.Context, tx *transaction.Fronten
 	return m.sendHash, m.sendErr
 }
 
-func (m *MockProxy) ProcessTransactionStatus(ctx context.Context, txHash string) (transaction.TxStatus, error) {
+func (m *MockProxy) GetTransactionStatus(ctx context.Context, txHash string) (string, error) {
 	if m.statusIndex < len(m.statusResponses) {
 		s := m.statusResponses[m.statusIndex]
 		m.statusIndex++
-		return s, nil
+		return string(s), nil
 	}
 	if len(m.statusResponses) > 0 {
-		return m.statusResponses[len(m.statusResponses)-1], nil
+		return string(m.statusResponses[len(m.statusResponses)-1]), nil
 	}
-	return transaction.TxStatusPending, nil
+	return string(transaction.TxStatusPending), nil
 }
 
 func (m *MockProxy) IsInterfaceNil() bool {
@@ -173,6 +186,14 @@ func (m *MockProxy) ExecuteVMQuery(ctx context.Context, vmRequest *data.VmValueR
 }
 func (m *MockProxy) FilterLogs(ctx context.Context, filter *core.FilterQuery) ([]*transaction.Events, error) {
 	return nil, nil
+}
+
+func (m *MockProxy) GetTransactionInfo(ctx context.Context, hash string) (*data.TransactionInfo, error) {
+	return &data.TransactionInfo{}, nil
+}
+
+func (m *MockProxy) GetTransactionInfoWithResults(ctx context.Context, hash string) (*data.TransactionInfo, error) {
+	return &data.TransactionInfo{}, nil
 }
 
 func TestSettle_Success(t *testing.T) {

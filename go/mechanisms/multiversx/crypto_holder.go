@@ -55,23 +55,28 @@ func NewSimpleCryptoHolderFromBytes(privKeyBytes []byte) (*SimpleCryptoHolder, e
 	}, nil
 }
 
+// GetPublicKey returns the public key
 func (h *SimpleCryptoHolder) GetPublicKey() crypto.PublicKey {
 	return h.publicKey
 }
 
+// GetPrivateKey returns the private key
 func (h *SimpleCryptoHolder) GetPrivateKey() crypto.PrivateKey {
 	return h.privateKey
 }
 
+// GetBech32 returns the address in Bech32 format
 func (h *SimpleCryptoHolder) GetBech32() string {
 	val, _ := h.address.AddressAsBech32String()
 	return val
 }
 
+// GetAddressHandler returns the address handler
 func (h *SimpleCryptoHolder) GetAddressHandler() core.AddressHandler {
 	return h.address
 }
 
+// IsInterfaceNil returns true if the interface value is nil
 func (h *SimpleCryptoHolder) IsInterfaceNil() bool {
 	return h == nil
 }
@@ -79,18 +84,22 @@ func (h *SimpleCryptoHolder) IsInterfaceNil() bool {
 // SimpleSigner implements builders.Signer
 type SimpleSigner struct{}
 
+// SignMessage signs a message with a private key
 func (s *SimpleSigner) SignMessage(msg []byte, privateKey crypto.PrivateKey) ([]byte, error) {
 	return s.SignByteSlice(msg, privateKey)
 }
 
+// VerifyMessage verifies a signature (not implemented)
 func (s *SimpleSigner) VerifyMessage(msg []byte, publicKey crypto.PublicKey, sig []byte) error {
 	return fmt.Errorf("VerifyMessage not implemented")
 }
 
+// SignTransaction signs a transaction object (not implemented, use builder directly)
 func (s *SimpleSigner) SignTransaction(tx *transaction.FrontendTransaction, privateKey crypto.PrivateKey) ([]byte, error) {
 	return nil, fmt.Errorf("SignTransaction not implemented (use builder)")
 }
 
+// SignByteSlice signs a raw byte slice using Ed25519
 func (s *SimpleSigner) SignByteSlice(msg []byte, privateKey crypto.PrivateKey) ([]byte, error) {
 	// Extract raw ed25519 private key
 	scalar := privateKey.Scalar()
@@ -102,10 +111,12 @@ func (s *SimpleSigner) SignByteSlice(msg []byte, privateKey crypto.PrivateKey) (
 	return ed25519.Sign(privKeyBytes, msg), nil
 }
 
+// VerifyByteSlice verifies a raw byte slice signature (not implemented)
 func (s *SimpleSigner) VerifyByteSlice(msg []byte, publicKey crypto.PublicKey, sig []byte) error {
 	return fmt.Errorf("VerifyByteSlice not implemented")
 }
 
+// IsInterfaceNil returns true if the interface value is nil
 func (s *SimpleSigner) IsInterfaceNil() bool {
 	return s == nil
 }

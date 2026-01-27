@@ -13,6 +13,8 @@
         "@multiversx/sdk-core": "^13.0.0",
         "@multiversx/sdk-network-providers": "^2.9.3",
         "@multiversx/sdk-wallet": "^4.0.0",
+        "@noble/ed25519": "^3.0.0",
+        "@noble/hashes": "^2.0.1",
         "@x402/core": "workspace:^",
         "zod": "^3.24.2"
     },

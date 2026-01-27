@@ -41,7 +41,7 @@ class UserSignerAdapter implements ISignerProvider {
   constructor(
     private userSigner: UserSigner,
     private address: string,
-  ) {}
+  ) { }
 
   /**
    * Signs a transaction using the underlying UserSigner.
@@ -117,6 +117,7 @@ axiosWithPayment
     process.exit(0);
   })
   .catch(error => {
+    console.error(`[DEBUG] Caught error: ${error.message}, status: ${error.response?.status}`);
     console.error(
       JSON.stringify({
         success: false,

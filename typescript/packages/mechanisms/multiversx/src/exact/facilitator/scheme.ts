@@ -25,7 +25,7 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
     private apiUrl: string = 'https://devnet-api.multiversx.com',
     private signer?: MultiversXSigner,
     private signerAddress?: string,
-  ) {}
+  ) { }
 
   /**
    * Gets the mechanism code.
@@ -166,7 +166,14 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
       }
     }
 
-    // Simulation
+    // Step 1: Verify Ed25519 signature to ensure sender authorized the transaction
+    const signatureValid = await this.verifySignature(relayedPayload)
+    if (!signatureValid.isValid) {
+      return signatureValid
+    }
+
+    // Step 2: Simulate transaction to validate it will succeed on-chain
+    // This provides additional safety by catching issues before broadcasting
     return this.verifyViaSimulation(relayedPayload)
   }
 
@@ -301,7 +308,7 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
         // Set Relayer
         if (relayerAddr) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(txToSign as any).relayer = new Address(relayerAddr)
+          ; (txToSign as any).relayer = new Address(relayerAddr)
         }
 
         relayerSig = await this.signer.signTransaction(txToSign)
@@ -356,6 +363,60 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
   }
 
   /**
+   * Verifies the Ed25519 signature of the transaction (crypto-only, no blockchain call).
+   * This matches EVM's signature verification pattern - simulation happens in settle.
+   *
+   * @param payload - The payload to verify
+   * @returns Validation response
+   */
+  private async verifySignature(payload: ExactMultiversXPayload): Promise<VerifyResponse> {
+    try {
+      if (!payload.signature) {
+        return { isValid: false, invalidReason: 'Missing signature' }
+      }
+
+      // Reconstruct the transaction for signature verification
+      const tx = new Transaction({
+        nonce: BigInt(payload.nonce),
+        value: payload.value,
+        receiver: new Address(payload.receiver),
+        sender: new Address(payload.sender),
+        gasLimit: payload.gasLimit,
+        gasPrice: BigInt(payload.gasPrice),
+        data: new TransactionPayload(payload.data || ''),
+        chainID: payload.chainID,
+        version: payload.version,
+        options: payload.options,
+      })
+
+      // Get the message to verify (transaction bytes for signing)
+      const { TransactionComputer } = await import('@multiversx/sdk-core')
+      const txComputer = new TransactionComputer()
+      const serializedTx = txComputer.computeBytesForSigning(tx)
+
+      // Verify signature using @noble/ed25519 (v3 API)
+      const ed = await import('@noble/ed25519')
+
+      // Get public key from sender address
+      const senderAddress = new Address(payload.sender)
+      const publicKeyBytes = senderAddress.getPublicKey()
+      const signatureBytes = Buffer.from(payload.signature, 'hex')
+
+      // ed25519 v3 verify returns a Promise<boolean>
+      const isValid = await ed.verifyAsync(signatureBytes, serializedTx, publicKeyBytes)
+
+      if (!isValid) {
+        return { isValid: false, invalidReason: 'Invalid Ed25519 signature' }
+      }
+
+      return { isValid: true, payer: payload.sender }
+    } catch (e: unknown) {
+      const err = e as Error
+      return { isValid: false, invalidReason: `Signature verification failed: ${err.message}` }
+    }
+  }
+
+  /**
    * Polls the transaction status until success or failure/timeout.
    *
    * @param txHash - The transaction hash to wait for
@@ -391,7 +452,7 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
               // Standard API usually puts error in data.transaction.error or execution code
               // We'll stick to simple status for parity unless we parse full info
             }
-          } catch {} // best effort
+          } catch { } // best effort
           throw new Error(errorMsg)
         }
         // pending, processing, etc.

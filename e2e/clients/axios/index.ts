@@ -5,8 +5,9 @@ import { privateKeyToAccount } from "viem/accounts";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { registerExactSvmScheme } from "@x402/svm/exact/client";
 import { registerExactMultiversXClientScheme } from "@x402/multiversx/exact/client";
-import { MultiversXSigner } from "@x402/multiversx";
+import { MultiversXSigner, ISignerProvider } from "@x402/multiversx";
 import { UserSigner, UserSecretKey } from "@multiversx/sdk-wallet";
+import { Transaction } from "@multiversx/sdk-core";
 import { base58 } from "@scure/base";
 import { createKeyPairSignerFromBytes } from "@solana/kit";
 import { x402Client } from "@x402/core/client";
@@ -26,14 +27,56 @@ const client = new x402Client();
 registerExactEvmScheme(client, { signer: evmAccount });
 registerExactSvmScheme(client, { signer: svmSigner });
 
+// Adapter to wrap UserSigner to ISignerProvider interface
+/**
+ * Adapter class that wraps UserSigner to implement ISignerProvider interface.
+ */
+class UserSignerAdapter implements ISignerProvider {
+  /**
+   * Creates a new UserSignerAdapter.
+   *
+   * @param userSigner - The underlying UserSigner instance
+   * @param address - The bech32 address of the signer
+   */
+  constructor(
+    private userSigner: UserSigner,
+    private address: string,
+  ) {}
+
+  /**
+   * Signs a transaction using the underlying UserSigner.
+   *
+   * @param transaction - The transaction to sign
+   * @returns The signed transaction
+   */
+  async signTransaction(transaction: Transaction): Promise<Transaction> {
+    const serialized = transaction.serializeForSigning();
+    const signature = await this.userSigner.sign(serialized);
+    transaction.applySignature(signature);
+    return transaction;
+  }
+
+  /**
+   * Gets the address of the signer.
+   *
+   * @returns The bech32 address
+   */
+  async getAddress(): Promise<string> {
+    return this.address;
+  }
+}
+
 // Register MultiversX if key is provided
 const mvxPrivateKeyHex = process.env.MVX_PRIVATE_KEY;
 if (mvxPrivateKeyHex && mvxPrivateKeyHex.length === 64) {
   try {
-    const userSigner = new UserSigner(new UserSecretKey(Buffer.from(mvxPrivateKeyHex, "hex")));
-    const mvxSigner = new MultiversXSigner(userSigner);
+    const secretKey = new UserSecretKey(Buffer.from(mvxPrivateKeyHex, "hex"));
+    const userSigner = new UserSigner(secretKey);
+    const address = secretKey.generatePublicKey().toAddress().bech32();
+    const signerAdapter = new UserSignerAdapter(userSigner, address);
+    const mvxSigner = new MultiversXSigner(signerAdapter);
     registerExactMultiversXClientScheme(client, { signer: mvxSigner });
-  } catch (e) {
+  } catch {
     console.error("⚠️ Failed to load MultiversX private key");
   }
 }
@@ -42,7 +85,7 @@ const axiosWithPayment = wrapAxiosWithPayment(axios.create(), client);
 
 axiosWithPayment
   .get(url)
-  .then(async (response) => {
+  .then(async response => {
     const data = response.data;
     // Check both v2 (PAYMENT-RESPONSE) and v1 (X-PAYMENT-RESPONSE) headers
     const paymentResponse =
@@ -73,11 +116,13 @@ axiosWithPayment
     console.log(JSON.stringify(result));
     process.exit(0);
   })
-  .catch((error) => {
-    console.error(JSON.stringify({
-      success: false,
-      error: error.message || "Request failed",
-      status_code: error.response?.status || 500,
-    }));
+  .catch(error => {
+    console.error(
+      JSON.stringify({
+        success: false,
+        error: error.message || "Request failed",
+        status_code: error.response?.status || 500,
+      }),
+    );
     process.exit(1);
   });

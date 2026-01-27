@@ -18,7 +18,8 @@ dotenv.config();
 
 const PORT = process.env.PORT || "4021";
 const EVM_NETWORK = (process.env.EVM_NETWORK || "eip155:84532") as `${string}:${string}`;
-const SVM_NETWORK = (process.env.SVM_NETWORK || "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1") as `${string}:${string}`;
+const SVM_NETWORK = (process.env.SVM_NETWORK ||
+  "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1") as `${string}:${string}`;
 const MVX_NETWORK = (process.env.MVX_NETWORK || "multiversx:D") as `${string}:${string}`;
 const EVM_PAYEE_ADDRESS = process.env.EVM_PAYEE_ADDRESS as `0x${string}`;
 const SVM_PAYEE_ADDRESS = process.env.SVM_PAYEE_ADDRESS as string;
@@ -59,7 +60,9 @@ if (MVX_PAYEE_ADDRESS) {
 // Register Bazaar discovery extension
 server.registerExtension(bazaarResourceServerExtension);
 
-console.log(`Facilitator account: ${process.env.EVM_PRIVATE_KEY ? process.env.EVM_PRIVATE_KEY.substring(0, 10) + '...' : 'not configured'}`);
+console.log(
+  `Facilitator account: ${process.env.EVM_PRIVATE_KEY ? process.env.EVM_PRIVATE_KEY.substring(0, 10) + "..." : "not configured"}`,
+);
 console.log(`Using remote facilitator at: ${facilitatorUrl}`);
 
 /**
@@ -122,33 +125,35 @@ app.use(
           }),
         },
       },
-      ...(MVX_PAYEE_ADDRESS ? {
-        "GET /protected-mvx": {
-          accepts: {
-            payTo: MVX_PAYEE_ADDRESS,
-            scheme: "exact",
-            price: "$0.001",
-            network: MVX_NETWORK,
-          },
-          extensions: {
-            ...declareDiscoveryExtension({
-              output: {
-                example: {
-                  message: "Protected endpoint accessed successfully",
-                  timestamp: "2024-01-01T00:00:00Z",
-                },
-                schema: {
-                  properties: {
-                    message: { type: "string" },
-                    timestamp: { type: "string" },
-                  },
-                  required: ["message", "timestamp"],
-                },
+      ...(MVX_PAYEE_ADDRESS
+        ? {
+            "GET /protected-mvx": {
+              accepts: {
+                payTo: MVX_PAYEE_ADDRESS,
+                scheme: "exact",
+                price: "$0.001",
+                network: MVX_NETWORK,
               },
-            }),
-          },
-        },
-      } : {}),
+              extensions: {
+                ...declareDiscoveryExtension({
+                  output: {
+                    example: {
+                      message: "Protected endpoint accessed successfully",
+                      timestamp: "2024-01-01T00:00:00Z",
+                    },
+                    schema: {
+                      properties: {
+                        message: { type: "string" },
+                        timestamp: { type: "string" },
+                      },
+                      required: ["message", "timestamp"],
+                    },
+                  },
+                }),
+              },
+            },
+          }
+        : {}),
     },
     server, // Pass pre-configured server instance
   ),

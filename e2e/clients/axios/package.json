@@ -20,7 +20,8 @@
     "dotenv": "^16.4.7",
     "viem": "^2.21.26",
     "@x402/multiversx": "workspace:*",
-    "@multiversx/sdk-wallet": "^4.2.0"
+    "@multiversx/sdk-wallet": "^4.2.0",
+    "@multiversx/sdk-core": "^13.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.24.0",

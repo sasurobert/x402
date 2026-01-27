@@ -74,7 +74,7 @@ func (s *ExactMultiversXScheme) ParsePrice(price x402.Price, network x402.Networ
 		}
 	}
 
-	return s.defaultMoneyConversion(decimalAmount, network)
+	return s.defaultMoneyConversion(decimalAmount)
 }
 
 func (s *ExactMultiversXScheme) parseMoneyToDecimal(price x402.Price) (float64, error) {
@@ -101,7 +101,7 @@ func (s *ExactMultiversXScheme) parseMoneyToDecimal(price x402.Price) (float64, 
 	}
 }
 
-func (s *ExactMultiversXScheme) defaultMoneyConversion(amount float64, network x402.Network) (x402.AssetAmount, error) {
+func (s *ExactMultiversXScheme) defaultMoneyConversion(amount float64) (x402.AssetAmount, error) {
 	decimals := 18
 
 	bigFloat := new(big.Float).SetFloat64(amount)

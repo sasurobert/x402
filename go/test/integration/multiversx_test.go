@@ -279,32 +279,35 @@ func TestFacilitatorVerify_ESDT_Success(t *testing.T) {
 
 	scheme, _ := facilitator.NewExactMultiversXScheme(server.URL, nil)
 
-	// Use Real Bech32 Address (Bob) for Strict Verification
-	payTo := "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx"
-	payToAddr, err := data.NewAddressFromBech32String(payTo)
-	if err != nil {
-		t.Fatalf("Failed to decode test address: %v", err)
-	}
-	payToHex := hex.EncodeToString(payToAddr.AddressBytes())
-
-	// Token: USDC-123 -> hex ("555344432d313233")
-	tokenHex := hex.EncodeToString([]byte("USDC-123"))
-	// Amount: 100 -> hex ("64")
-	amountHex := "64"
+	// Generate Keys
+	privKey := ed25519.NewKeyFromSeed([]byte("01234567890123456789012345678901")) // 32 bytes seed
+	pubKey := privKey.Public().(ed25519.PublicKey)
+	senderAddr := data.NewAddressFromBytes(pubKey)
+	senderBech32, _ := senderAddr.AddressAsBech32String()
 
 	// Data: "MultiESDTNFTTransfer@<receiver_hex>@01@<token_hex>@00@<amount_hex>"
-	// The facilitator expects this exact format.
+	// We must use the generated sender as the mocked payload sender to match signature
+	// We'll effectively send to self for simplicity or just use the generated addr as "Bob"
+	payTo := senderBech32
+	payToHex := hex.EncodeToString(senderAddr.AddressBytes())
+
+	tokenHex := hex.EncodeToString([]byte("USDC-123"))
+	amountHex := "64"
 	dataString := fmt.Sprintf("MultiESDTNFTTransfer@%s@01@%s@00@%s", payToHex, tokenHex, amountHex)
 
 	rp := multiversx.ExactRelayedPayload{}
 	rp.Data = dataString
 	rp.Value = "0"
-	rp.Receiver = payTo // Must match PayTo
-	rp.Sender = payTo   // Must be valid Bech32 (using Bob as sender for convenience)
-	// Must be valid hex (64 bytes)
-	rp.Signature = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
-	rp.ChainID = "D" // Needed for ToTransaction defaults if checked?
+	rp.Receiver = payTo
+	rp.Sender = payTo
+	rp.ChainID = "D"
 	rp.Version = 1
+
+	// Sign
+	tx := rp.ToTransaction()
+	txBytes, _ := multiversx.SerializeTransaction(&tx)
+	sig := ed25519.Sign(privKey, txBytes)
+	rp.Signature = hex.EncodeToString(sig)
 
 	payloadBytes, _ := json.Marshal(rp)
 	var rpMap map[string]interface{}
@@ -344,13 +347,16 @@ func TestFacilitatorVerify_EGLD_Alias_MultiESDT(t *testing.T) {
 
 	scheme, _ := facilitator.NewExactMultiversXScheme(server.URL, nil)
 
-	// PayTo: Bob
-	payTo := "erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx"
-	payToAddr, _ := data.NewAddressFromBech32String(payTo)
-	payToHex := hex.EncodeToString(payToAddr.AddressBytes())
+	// Generate Keys
+	privKey := ed25519.NewKeyFromSeed([]byte("01234567890123456789012345678901"))
+	pubKey := privKey.Public().(ed25519.PublicKey)
+	senderAddr := data.NewAddressFromBytes(pubKey)
+	senderBech32, _ := senderAddr.AddressAsBech32String()
+
+	payTo := senderBech32
+	payToHex := hex.EncodeToString(senderAddr.AddressBytes())
 
 	// Token: EGLD-000000
-	// hex("EGLD-000000") = 45474c442d303030303030
 	tokenHex := hex.EncodeToString([]byte("EGLD-000000"))
 	amountHex := "64" // 100
 
@@ -361,7 +367,14 @@ func TestFacilitatorVerify_EGLD_Alias_MultiESDT(t *testing.T) {
 	rp.Value = "0"
 	rp.Receiver = payTo
 	rp.Sender = payTo
-	rp.Signature = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	rp.ChainID = "D"
+	rp.Version = 1
+
+	// Sign
+	tx := rp.ToTransaction()
+	txBytes, _ := multiversx.SerializeTransaction(&tx)
+	sig := ed25519.Sign(privKey, txBytes)
+	rp.Signature = hex.EncodeToString(sig)
 
 	payloadBytes, _ := json.Marshal(rp)
 	var rpMap map[string]interface{}

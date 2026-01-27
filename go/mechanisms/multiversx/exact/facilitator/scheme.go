@@ -200,11 +200,7 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 	// Default to relayed unless explicit "direct" transfer method is requested
 	transferMethod, _ := requirements.Extra["assetTransferMethod"].(string)
 
-	if transferMethod == multiversx.TransferMethodDirect {
-		// DIRECT TRANSFER (Version 1 usually)
-		hash, err = s.proxy.SendTransaction(ctx, &tx)
-
-	} else {
+	if transferMethod != multiversx.TransferMethodDirect {
 		// RELAYED TRANSFER (Relayed V3) - Default
 		// Strictly require a signer for relayed transactions
 		if s.signer == nil {
@@ -220,14 +216,17 @@ func (s *ExactMultiversXScheme) Settle(ctx context.Context, payload types.Paymen
 		tx.RelayerAddr = facilitatorAddr
 		tx.Version = 2 // Relayed V3 uses version 2
 
-		sig, err := s.signer.Sign(ctx, &tx)
-		if err != nil {
-			return nil, x402.NewSettleError("signing_failed", relayedPayload.Sender, "multiversx", "", err)
+		// Store signature in temporary error variable to avoid shadowing 'err'
+		var sig string
+		var signErr error
+		sig, signErr = s.signer.Sign(ctx, &tx)
+		if signErr != nil {
+			return nil, x402.NewSettleError("signing_failed", relayedPayload.Sender, "multiversx", "", signErr)
 		}
 		tx.RelayerSignature = sig
-
-		hash, err = s.signer.SendTransaction(ctx, &tx)
 	}
+
+	hash, err = s.proxy.SendTransaction(ctx, &tx)
 
 	if err != nil {
 		return nil, x402.NewSettleError("broadcast_failed", relayedPayload.Sender, "multiversx", "", err)

@@ -111,7 +111,14 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 	nonce := account.Nonce
 
 	// Extract relayer info
-	relayer, _ := requirements.Extra["relayer"].(string)
+	var relayer string
+	if transferMethod != multiversx.TransferMethodDirect {
+		var ok bool
+		relayer, ok = requirements.Extra["relayer"].(string)
+		if !ok || relayer == "" {
+			return types.PaymentPayload{}, fmt.Errorf("relayer address is required for relayed transfers")
+		}
+	}
 
 	asset := requirements.Asset
 	if asset == "" {
@@ -172,6 +179,8 @@ func (s *ExactMultiversXScheme) CreatePaymentPayload(ctx context.Context, requir
 func (s *ExactMultiversXScheme) calculateGasLimit(requirements types.PaymentRequirements, dataString string) uint64 {
 	if gl, ok := requirements.Extra["gasLimit"].(uint64); ok {
 		return gl
+	} else if glFloat, ok := requirements.Extra["gasLimit"].(float64); ok {
+		return uint64(glFloat)
 	}
 
 	asset := requirements.Asset

@@ -97,7 +97,5 @@ func TestVerifyPayment(t *testing.T) {
 	var vErr *x402.VerifyError
 	if !errors.As(err, &vErr) {
 		t.Errorf("Expected *x402.VerifyError, got %T: %v", err, err)
-	} else {
-		// Optional: check reason code if we define one
 	}
 }

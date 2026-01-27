@@ -94,6 +94,7 @@ export abstract class BaseProxy {
       this.process.stderr?.on('data', (data) => {
         stderr += data.toString();
         verboseLog(`[${this.directory}] stderr: ${data.toString()}`);
+        console.error(`[${this.directory}] stderr: ${data.toString()}`);
       });
 
       this.process.on('error', (error) => {

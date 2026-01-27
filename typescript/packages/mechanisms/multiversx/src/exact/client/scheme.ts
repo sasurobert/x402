@@ -1,8 +1,8 @@
 import { PaymentPayload, PaymentRequirements, SchemeNetworkClient } from '@x402/core/types'
 import { MultiversXSigner } from '../../signer'
-import { ExactMultiversXPayload, ExactMultiversXAuthorization } from '../../types'
+import { ExactMultiversXPayload } from '../../types'
 import { ApiNetworkProvider } from '@multiversx/sdk-network-providers'
-import { Account, Address } from '@multiversx/sdk-core'
+import { Address, Transaction, TransactionPayload } from '@multiversx/sdk-core'
 
 /**
  * MultiversX client implementation for the Exact payment scheme.
@@ -15,7 +15,7 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
    *
    * @param signer - The MultiversX signer instance
    */
-  constructor(private readonly signer: MultiversXSigner) { }
+  constructor(private readonly signer: MultiversXSigner) {}
 
   /**
    * Creates a payment payload.
@@ -28,6 +28,10 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
     x402Version: number,
     paymentRequirements: PaymentRequirements,
   ): Promise<Pick<PaymentPayload, 'x402Version' | 'payload'>> {
+    if (!paymentRequirements.payTo) {
+      throw new Error('PayTo is required')
+    }
+
     const now = Math.floor(Date.now() / 1000)
 
     // Parse ChainID and Helper for API URL
@@ -37,9 +41,15 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
     if (chainRef === 'D') apiUrl = 'https://devnet-api.multiversx.com'
     if (chainRef === 'T') apiUrl = 'https://testnet-api.multiversx.com'
 
-    // Fetch Nonce from Network
     const provider = new ApiNetworkProvider(apiUrl)
-    const senderAddress = new Address(this.signer.address)
+    let senderAddressStr: string
+    if (this.signer['senderAddress']) {
+      senderAddressStr = this.signer['senderAddress']
+    } else {
+      senderAddressStr = await this.signer.getAddress()
+    }
+
+    const senderAddress = new Address(senderAddressStr)
 
     let nonce = 0
     try {
@@ -49,78 +59,119 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
       console.warn('Failed to fetch account for nonce, defaulting to 0', error)
     }
 
-    // We assume 'paymentRequirements.asset' holds the Token Identifier (EGLD or TokenID)
-    // The 'payTo' is the SC Address.
-    // The 'extra' field contains resourceId.
-
-    const resourceId = paymentRequirements.extra?.resourceId
-    if (typeof resourceId !== 'string' || !resourceId) {
-      throw new Error(
-        'resourceId is required and must be a string in payment requirements extra field',
-      )
+    // Parse specific requirements
+    let gasLimit = 50_000
+    if (paymentRequirements.extra?.gasLimit) {
+      const gl = paymentRequirements.extra.gasLimit
+      if (typeof gl === 'number') gasLimit = gl
+      else if (typeof gl === 'string') gasLimit = parseInt(gl, 10)
     }
 
-    const authorization: ExactMultiversXAuthorization = {
-      from: this.signer.address,
-      to: paymentRequirements.payTo,
-      value: paymentRequirements.amount,
-      tokenIdentifier: paymentRequirements.asset, // asset field used as TokenID
-      resourceId: resourceId,
-      validAfter: (now - 600).toString(), // 10 minutes ago
-      validBefore: (now + paymentRequirements.maxTimeoutSeconds).toString(),
-      nonce: nonce,
+    const scFunction =
+      typeof paymentRequirements.extra?.scFunction === 'string'
+        ? paymentRequirements.extra.scFunction
+        : undefined
+
+    const args: string[] = []
+    if (Array.isArray(paymentRequirements.extra?.arguments)) {
+      paymentRequirements.extra.arguments.forEach((arg) => {
+        if (typeof arg === 'string') args.push(arg)
+      })
     }
 
-    const chainId = chainRef
+    const relayer =
+      typeof paymentRequirements.extra?.relayer === 'string'
+        ? paymentRequirements.extra.relayer
+        : undefined
 
-    const request = {
-      to: authorization.to,
-      amount: authorization.value,
-      tokenIdentifier: authorization.tokenIdentifier,
-      resourceId: authorization.resourceId,
-      chainId: chainId,
-      nonce: authorization.nonce,
+    const asset = paymentRequirements.asset
+    if (!asset) {
+      throw new Error('asset is required')
     }
 
-    const signatureHex = await this.signer.sign(request)
+    let receiver = paymentRequirements.payTo
+    let value = paymentRequirements.amount
+    let dataString = ''
+    let gasPrice = 1_000_000_000
 
-    // IMPORTANT: The payload nonce MUST match the signed nonce.
-    // The previous implementation had a placeholder 0.
-    // Now we use the fetched nonce.
+    if (asset !== 'EGLD') {
+      receiver = senderAddressStr
+      value = '0'
+      gasLimit = 60_000_000
 
-    const payload: ExactMultiversXPayload = {
-      nonce: authorization.nonce!,
-      value: authorization.value,
-      receiver: authorization.to,
-      sender: authorization.from,
-      gasPrice: 1000000000,
-      gasLimit: authorization.tokenIdentifier === 'EGLD' ? 50000 : 60000000,
-      data: '', // Computed/Verified by Facilitator, but we could populate it if we wanted strict parity
-      chainID: chainId,
-      version: 1,
-      options: 0,
-      signature: signatureHex,
-      authorization, // Optional context
-    }
-
-    // Populate data field for completeness/verification matching
-    if (authorization.tokenIdentifier && authorization.tokenIdentifier !== 'EGLD') {
-      const resourceIdHex = Buffer.from(resourceId, 'utf8').toString('hex')
-      const tokenHex = Buffer.from(authorization.tokenIdentifier, 'utf8').toString('hex')
-      const destAddress = new Address(authorization.to)
+      const destAddress = new Address(paymentRequirements.payTo)
       const destHex = destAddress.hex()
-      let amountBi = BigInt(authorization.value)
+
+      const tokenHex = Buffer.from(asset, 'utf8').toString('hex')
+
+      let amountBi = BigInt(paymentRequirements.amount)
       let amountHex = amountBi.toString(16)
       if (amountHex.length % 2 !== 0) amountHex = '0' + amountHex
 
-      // MultiESDTNFTTransfer@<DestHex>@01@<TokenHex>@00@<AmountHex>@<ResourceID>
-      const dataString = `MultiESDTNFTTransfer@${destHex}@01@${tokenHex}@00@${amountHex}@${resourceIdHex}`
-      payload.data = Buffer.from(dataString).toString('base64')
+      const parts = ['MultiESDTNFTTransfer', destHex, '01', tokenHex, '00', amountHex]
+
+      if (scFunction) {
+        parts.push(Buffer.from(scFunction, 'utf8').toString('hex'))
+      }
+
+      if (args.length > 0) {
+        parts.push(...args)
+      }
+
+      dataString = parts.join('@')
     } else {
-      // EGLD
-      // In signer we did: new TransactionPayload(request.resourceId)
-      // Which is just the string bytes
-      payload.data = Buffer.from(authorization.resourceId).toString('base64')
+      const parts: string[] = []
+      if (scFunction) {
+        parts.push(scFunction)
+      }
+      if (args.length > 0) {
+        parts.push(...args)
+      }
+      if (parts.length > 0) {
+        dataString = parts.join('@')
+      }
+    }
+
+    const validAfter = now - 600
+    let validBefore = now + 600
+    if (paymentRequirements.maxTimeoutSeconds && paymentRequirements.maxTimeoutSeconds > 0) {
+      validBefore = now + paymentRequirements.maxTimeoutSeconds
+    }
+
+    // Sign
+    const transaction = new Transaction({
+      nonce: BigInt(nonce),
+      value: value,
+      receiver: new Address(receiver),
+      sender: senderAddress, // self
+      gasLimit: gasLimit,
+      gasPrice: BigInt(gasPrice),
+      data: new TransactionPayload(dataString),
+      chainID: chainRef,
+      version: 2,
+    })
+
+    if (relayer) {
+      // Future work: set relayer semantics if supported by SDK transaction object
+    }
+
+    const signature = await this.signer.signTransaction(transaction)
+
+    const payload: ExactMultiversXPayload = {
+      nonce,
+      value,
+      receiver,
+      sender: senderAddressStr,
+      gasPrice,
+      gasLimit,
+      data: dataString,
+      chainID: chainRef,
+      version: 2,
+      options: 0,
+      signature,
+      relayer,
+      validAfter,
+      validBefore,
     }
 
     return {

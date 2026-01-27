@@ -28,8 +28,11 @@ export const ExactMultiversXPayloadSchema = z.object({
   chainID: z.string(),
   version: z.number(),
   options: z.number().optional(),
-  signature: z.string(), // Hex encoded signature
-  authorization: ExactMultiversXAuthorizationSchema.optional(),
+  signature: z.string().optional(), // Hex encoded signature
+  relayer: z.string().optional(),
+  relayerSignature: z.string().optional(),
+  validAfter: z.number().optional(), // Unix timestamp (seconds)
+  validBefore: z.number().optional(), // Unix timestamp (seconds)
 })
 
 export type ExactMultiversXPayload = z.infer<typeof ExactMultiversXPayloadSchema>

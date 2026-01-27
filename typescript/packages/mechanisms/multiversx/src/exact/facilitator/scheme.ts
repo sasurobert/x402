@@ -25,7 +25,7 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
     private apiUrl: string = 'https://devnet-api.multiversx.com',
     private signer?: MultiversXSigner,
     private signerAddress?: string,
-  ) { }
+  ) {}
 
   /**
    * Gets the mechanism code.
@@ -308,7 +308,7 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
         // Set Relayer
         if (relayerAddr) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ; (txToSign as any).relayer = new Address(relayerAddr)
+          ;(txToSign as any).relayer = new Address(relayerAddr)
         }
 
         relayerSig = await this.signer.signTransaction(txToSign)
@@ -452,7 +452,7 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
               // Standard API usually puts error in data.transaction.error or execution code
               // We'll stick to simple status for parity unless we parse full info
             }
-          } catch { } // best effort
+          } catch {} // best effort
           throw new Error(errorMsg)
         }
         // pending, processing, etc.

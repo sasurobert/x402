@@ -99,6 +99,9 @@ func TestCreatePaymentPayload_EGLD(t *testing.T) {
 		Amount:  "100",
 		Asset:   "EGLD",
 		Network: "multiversx:D",
+		Extra: map[string]interface{}{
+			"relayer": testSender,
+		},
 	}
 
 	payload, err := scheme.CreatePaymentPayload(context.Background(), req)
@@ -139,7 +142,8 @@ func TestCreatePaymentPayload_EGLD_WithScFunction(t *testing.T) {
 		Network: "multiversx:D",
 		Extra: map[string]interface{}{
 			"scFunction": "buy",
-			"arguments":  []interface{}{"01", "02"},
+			"arguments":  []string{"01", "02"},
+			"relayer":    testSender,
 		},
 	}
 
@@ -171,6 +175,9 @@ func TestCreatePaymentPayload_ESDT(t *testing.T) {
 		Amount:  "100",
 		Asset:   testAsset,
 		Network: "multiversx:D",
+		Extra: map[string]interface{}{
+			"relayer": testSender,
+		},
 	}
 
 	payload, err := scheme.CreatePaymentPayload(context.Background(), req)
@@ -214,6 +221,7 @@ func TestCreatePaymentPayload_ESDT_WithResourceID(t *testing.T) {
 		Network: "multiversx:D",
 		Extra: map[string]interface{}{
 			"scFunction": "inv_123",
+			"relayer":    testSender,
 		},
 	}
 
@@ -246,6 +254,9 @@ func TestCreatePaymentPayload_EGLD_Alias(t *testing.T) {
 		Amount:  "100",
 		Asset:   "EGLD-000000", // Should be treated as EGLD if handled or ESDT token otherwise
 		Network: "multiversx:D",
+		Extra: map[string]interface{}{
+			"relayer": testSender,
+		},
 	}
 
 	payload, err := scheme.CreatePaymentPayload(context.Background(), req)

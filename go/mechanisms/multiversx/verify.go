@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -31,7 +32,7 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 	// 3. Local Ed25519 Verification
 	tx := payload.ToTransaction()
 	// Serialize as canonical JSON for verification
-	msgBytes, err := SerializeTransaction(tx)
+	msgBytes, err := json.Marshal(tx)
 	if err != nil {
 		return false, x402.NewVerifyError("serialization_failed", payload.Sender, "multiversx", err)
 	}

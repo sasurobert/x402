@@ -2,13 +2,11 @@ package multiversx
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"regexp"
 	"strings"
 
-	"github.com/multiversx/mx-chain-core-go/data/transaction"
 	"github.com/multiversx/mx-sdk-go/data"
 )
 
@@ -99,22 +97,4 @@ func CalculateGasLimit(data []byte, numTransfers int) uint64 {
 		(GasPerByte * uint64(len(data))) +
 		(MultiTransferCost * uint64(numTransfers)) +
 		RelayedCost
-}
-
-// SerializeTransaction creates the bytes to be signed
-func SerializeTransaction(tx transaction.FrontendTransaction) ([]byte, error) {
-	m := map[string]interface{}{
-		"nonce":    tx.Nonce,
-		"value":    tx.Value,
-		"receiver": tx.Receiver,
-		"sender":   tx.Sender,
-		"gasPrice": tx.GasPrice,
-		"gasLimit": tx.GasLimit,
-		"data":     string(tx.Data),
-		"chainID":  tx.ChainID,
-		"version":  tx.Version,
-		"options":  tx.Options,
-	}
-
-	return json.Marshal(m)
 }

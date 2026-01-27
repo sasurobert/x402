@@ -16,9 +16,10 @@ const (
 	ChainIDTestnet = "T"
 
 	// Gas Constants
-	GasLimitStandard = 50_000
-	GasLimitESDT     = 60_000_000
-	GasPriceDefault  = 1_000_000_000
+	GasLimitStandard       = 50_000
+	GasLimitESDT           = 60_000_000
+	GasPriceDefault        = 1_000_000_000
+	GasLimitRelayedV3Extra = 100_000
 
 	// Token Constants
 	NativeTokenTicker = "EGLD"
@@ -46,37 +47,41 @@ type PaymentPayload struct {
 
 // ExactRelayedPayload defines the structure for a transaction that might be relayed
 type ExactRelayedPayload struct {
-	Nonce       uint64 `json:"nonce"`
-	Value       string `json:"value"`
-	Receiver    string `json:"receiver"`
-	Sender      string `json:"sender"`
-	GasPrice    uint64 `json:"gasPrice"`
-	GasLimit    uint64 `json:"gasLimit"`
-	Data        string `json:"data,omitempty"`
-	ChainID     string `json:"chainID"`
-	Version     uint32 `json:"version"`
-	Options     uint32 `json:"options,omitempty"`
-	Signature   string `json:"signature,omitempty"`
-	ValidAfter  uint64 `json:"validAfter,omitempty"`
-	ValidBefore uint64 `json:"validBefore,omitempty"`
+	Nonce            uint64 `json:"nonce"`
+	Value            string `json:"value"`
+	Receiver         string `json:"receiver"`
+	Sender           string `json:"sender"`
+	GasPrice         uint64 `json:"gasPrice"`
+	GasLimit         uint64 `json:"gasLimit"`
+	Data             string `json:"data,omitempty"`
+	ChainID          string `json:"chainID"`
+	Version          uint32 `json:"version"`
+	Options          uint32 `json:"options,omitempty"`
+	Signature        string `json:"signature,omitempty"`
+	Relayer          string `json:"relayer,omitempty"`
+	RelayerSignature string `json:"relayerSignature,omitempty"`
+	ValidAfter       uint64 `json:"validAfter,omitempty"`
+	ValidBefore      uint64 `json:"validBefore,omitempty"`
 }
 
 // ToMap converts the payload to a map for JSON marshaling
 func (p *ExactRelayedPayload) ToMap() map[string]interface{} {
 	return map[string]interface{}{
-		"nonce":       p.Nonce,
-		"value":       p.Value,
-		"receiver":    p.Receiver,
-		"sender":      p.Sender,
-		"gasPrice":    p.GasPrice,
-		"gasLimit":    p.GasLimit,
-		"data":        p.Data,
-		"chainID":     p.ChainID,
-		"version":     p.Version,
-		"options":     p.Options,
-		"signature":   p.Signature,
-		"validAfter":  p.ValidAfter,
-		"validBefore": p.ValidBefore,
+		"nonce":            p.Nonce,
+		"value":            p.Value,
+		"receiver":         p.Receiver,
+		"sender":           p.Sender,
+		"gasPrice":         p.GasPrice,
+		"gasLimit":         p.GasLimit,
+		"data":             p.Data,
+		"chainID":          p.ChainID,
+		"version":          p.Version,
+		"options":          p.Options,
+		"signature":        p.Signature,
+		"relayer":          p.Relayer,
+		"relayerSignature": p.RelayerSignature,
+		"validAfter":       p.ValidAfter,
+		"validBefore":      p.ValidBefore,
 	}
 }
 
@@ -138,6 +143,14 @@ func PayloadFromMap(data map[string]interface{}) (*ExactRelayedPayload, error) {
 		p.Signature = val
 	}
 
+	if val, ok := data["relayer"].(string); ok {
+		p.Relayer = val
+	}
+
+	if val, ok := data["relayerSignature"].(string); ok {
+		p.RelayerSignature = val
+	}
+
 	if val, ok := data["validAfter"].(uint64); ok {
 		p.ValidAfter = val
 	} else if val, ok := data["validAfter"].(float64); ok {
@@ -156,17 +169,19 @@ func PayloadFromMap(data map[string]interface{}) (*ExactRelayedPayload, error) {
 // ToTransaction converts the payload to an SDK Transaction struct
 func (p *ExactRelayedPayload) ToTransaction() transaction.FrontendTransaction {
 	return transaction.FrontendTransaction{
-		Nonce:     p.Nonce,
-		Value:     p.Value,
-		Receiver:  p.Receiver,
-		Sender:    p.Sender,
-		GasPrice:  p.GasPrice,
-		GasLimit:  p.GasLimit,
-		Data:      []byte(p.Data),
-		ChainID:   p.ChainID,
-		Version:   p.Version,
-		Options:   p.Options,
-		Signature: p.Signature,
+		Nonce:            p.Nonce,
+		Value:            p.Value,
+		Receiver:         p.Receiver,
+		Sender:           p.Sender,
+		GasPrice:         p.GasPrice,
+		GasLimit:         p.GasLimit,
+		Data:             []byte(p.Data),
+		ChainID:          p.ChainID,
+		Version:          p.Version,
+		Options:          p.Options,
+		Signature:        p.Signature,
+		RelayerAddr:      p.Relayer,
+		RelayerSignature: p.RelayerSignature,
 	}
 }
 

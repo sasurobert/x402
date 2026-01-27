@@ -83,7 +83,7 @@ const fetchWithPayment = wrapFetchWithPayment(fetch, client);
 
 fetchWithPayment(url, {
   method: "GET",
-}).then(async response => {
+}).then(async (response: Response) => {
   const data = await response.json();
   const paymentResponse = new x402HTTPClient(client).getPaymentSettleResponse(name =>
     response.headers.get(name),

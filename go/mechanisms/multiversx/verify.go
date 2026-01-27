@@ -56,14 +56,12 @@ func VerifyPayment(ctx context.Context, payload ExactRelayedPayload, requirement
 		return false, x402.NewVerifyError("invalid_public_key_length", payload.Sender, "multiversx", fmt.Errorf("expected 32 bytes, got %d", len(pubKeyBytes)))
 	}
 
-	if ed25519.Verify(pubKeyBytes, msgBytes, sigBytes) {
-		// Valid Signature!
-		return true, nil
+	if !ed25519.Verify(pubKeyBytes, msgBytes, sigBytes) {
+		return false, x402.NewVerifyError(x402.ErrCodeSignatureInvalid, payload.Sender, "multiversx", nil)
 	}
 
-	// 4. Fallback to Simulation
-	// If local verify fails, it MIGHT be because our serialization doesn't match the node's
-	// or it's a Smart Contract Wallet.
+	// 4. Verification via Simulation
+	// We simulation ALL transactions to ensure validity (Smart Contract Wallets, balances, nonces)
 	hash, err := simulator(payload)
 	if err != nil {
 		// If simulation fails, it's definitely invalid

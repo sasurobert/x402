@@ -56,11 +56,11 @@ func TestVerifyPayment(t *testing.T) {
 	}
 
 	// Test success case
-	failSim := func(p ExactRelayedPayload) (string, error) {
-		return "", errors.New("fallback to sim should not happen if local verifies")
+	successSim := func(p ExactRelayedPayload) (string, error) {
+		return "sim_hash", nil
 	}
 
-	valid, err := VerifyPayment(context.Background(), payload, req, failSim)
+	valid, err := VerifyPayment(context.Background(), payload, req, successSim)
 	if err != nil {
 		t.Errorf("VerifyPayment failed: %v", err)
 	}

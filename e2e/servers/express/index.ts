@@ -3,6 +3,7 @@ import { paymentMiddleware } from "@x402/express";
 import { x402ResourceServer, HTTPFacilitatorClient } from "@x402/core/server";
 import { registerExactEvmScheme } from "@x402/evm/exact/server";
 import { registerExactSvmScheme } from "@x402/svm/exact/server";
+import { registerExactMultiversXServerScheme } from "@x402/multiversx/exact/server";
 import { bazaarResourceServerExtension, declareDiscoveryExtension } from "@x402/extensions/bazaar";
 import dotenv from "dotenv";
 
@@ -18,8 +19,10 @@ dotenv.config();
 const PORT = process.env.PORT || "4021";
 const EVM_NETWORK = (process.env.EVM_NETWORK || "eip155:84532") as `${string}:${string}`;
 const SVM_NETWORK = (process.env.SVM_NETWORK || "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1") as `${string}:${string}`;
+const MVX_NETWORK = (process.env.MVX_NETWORK || "multiversx:D") as `${string}:${string}`;
 const EVM_PAYEE_ADDRESS = process.env.EVM_PAYEE_ADDRESS as `0x${string}`;
 const SVM_PAYEE_ADDRESS = process.env.SVM_PAYEE_ADDRESS as string;
+const MVX_PAYEE_ADDRESS = process.env.MVX_PAYEE_ADDRESS as string;
 const facilitatorUrl = process.env.FACILITATOR_URL;
 
 if (!EVM_PAYEE_ADDRESS) {
@@ -49,6 +52,9 @@ const server = new x402ResourceServer(facilitatorClient);
 // Register server schemes
 registerExactEvmScheme(server);
 registerExactSvmScheme(server);
+if (MVX_PAYEE_ADDRESS) {
+  registerExactMultiversXServerScheme(server);
+}
 
 // Register Bazaar discovery extension
 server.registerExtension(bazaarResourceServerExtension);
@@ -116,6 +122,33 @@ app.use(
           }),
         },
       },
+      ...(MVX_PAYEE_ADDRESS ? {
+        "GET /protected-mvx": {
+          accepts: {
+            payTo: MVX_PAYEE_ADDRESS,
+            scheme: "exact",
+            price: "$0.001",
+            network: MVX_NETWORK,
+          },
+          extensions: {
+            ...declareDiscoveryExtension({
+              output: {
+                example: {
+                  message: "Protected endpoint accessed successfully",
+                  timestamp: "2024-01-01T00:00:00Z",
+                },
+                schema: {
+                  properties: {
+                    message: { type: "string" },
+                    timestamp: { type: "string" },
+                  },
+                  required: ["message", "timestamp"],
+                },
+              },
+            }),
+          },
+        },
+      } : {}),
     },
     server, // Pass pre-configured server instance
   ),
@@ -141,6 +174,19 @@ app.get("/protected", (req, res) => {
  * Clients must provide a valid payment signature to access this endpoint.
  */
 app.get("/protected-svm", (req, res) => {
+  res.json({
+    message: "Protected endpoint accessed successfully",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+/**
+ * Protected MultiversX endpoint - requires payment to access
+ *
+ * This endpoint demonstrates a resource protected by x402 payment middleware for MultiversX.
+ * Clients must provide a valid payment signature to access this endpoint.
+ */
+app.get("/protected-mvx", (req, res) => {
   res.json({
     message: "Protected endpoint accessed successfully",
     timestamp: new Date().toISOString(),

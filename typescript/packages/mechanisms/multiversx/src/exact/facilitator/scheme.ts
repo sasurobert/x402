@@ -3,9 +3,9 @@ import {
   PaymentRequirements,
   PaymentPayload,
   SettleResponse,
-  SchemeNetworkFacilitator,
   Network,
 } from '@x402/core/types'
+import { SchemeNetworkFacilitator } from '@x402/core/types/mechanisms'
 import { ExactMultiversXPayload } from '../../types'
 import { MultiversXSigner } from '../../signer'
 import { Transaction, Address, TransactionPayload } from '@multiversx/sdk-core'

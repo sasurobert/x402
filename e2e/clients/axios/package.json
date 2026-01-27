@@ -18,7 +18,9 @@
     "@x402/svm": "workspace:*",
     "axios": "^1.7.9",
     "dotenv": "^16.4.7",
-    "viem": "^2.21.26"
+    "viem": "^2.21.26",
+    "@x402/multiversx": "workspace:*",
+    "@multiversx/sdk-wallet": "^4.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.24.0",

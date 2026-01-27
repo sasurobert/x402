@@ -4,7 +4,8 @@
   "language": "go",
   "protocolFamilies": [
     "evm",
-    "svm"
+    "svm",
+    "multiversx"
   ],
   "x402Versions": [
     1,
@@ -14,6 +15,7 @@
     "required": [
       "EVM_PRIVATE_KEY",
       "SVM_PRIVATE_KEY",
+      "MVX_PRIVATE_KEY",
       "RESOURCE_SERVER_URL",
       "ENDPOINT_PATH"
     ],

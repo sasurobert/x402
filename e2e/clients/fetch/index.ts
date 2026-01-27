@@ -3,6 +3,9 @@ import { wrapFetchWithPayment, decodePaymentResponseHeader } from "@x402/fetch";
 import { privateKeyToAccount } from "viem/accounts";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { registerExactSvmScheme } from "@x402/svm/exact/client";
+import { registerExactMultiversXClientScheme } from "@x402/multiversx/exact/client";
+import { MultiversXSigner } from "@x402/multiversx";
+import { UserSigner, UserSecretKey } from "@multiversx/sdk-wallet";
 import { base58 } from "@scure/base";
 import { createKeyPairSignerFromBytes } from "@solana/kit";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
@@ -14,11 +17,15 @@ const endpointPath = process.env.ENDPOINT_PATH as string;
 const url = `${baseURL}${endpointPath}`;
 const evmAccount = privateKeyToAccount(process.env.EVM_PRIVATE_KEY as `0x${string}`);
 const svmSigner = await createKeyPairSignerFromBytes(base58.decode(process.env.SVM_PRIVATE_KEY as string));
+const mvxPrivateKeyHex = process.env.MVX_PRIVATE_KEY as string;
+const userSigner = new UserSigner(new UserSecretKey(Buffer.from(mvxPrivateKeyHex, "hex")));
+const mvxSigner = new MultiversXSigner(userSigner);
 
 // Create client and register EVM and SVM schemes using the new register helpers
 const client = new x402Client();
 registerExactEvmScheme(client, { signer: evmAccount });
 registerExactSvmScheme(client, { signer: svmSigner });
+registerExactMultiversXClientScheme(client, { signer: mvxSigner });
 
 const fetchWithPayment = wrapFetchWithPayment(fetch, client);
 

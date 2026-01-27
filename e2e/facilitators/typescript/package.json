@@ -20,7 +20,9 @@
     "@x402/svm": "workspace:*",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "viem": "^2.21.54"
+    "viem": "^2.21.54",
+    "@multiversx/sdk-wallet": "^4.2.0",
+    "@x402/multiversx": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

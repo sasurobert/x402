@@ -1,16 +1,17 @@
-import { PaymentPayload, PaymentRequirements, ISchemeNetworkServer } from '@x402/core'
+import { PaymentRequirements, Price, Network, AssetAmount } from '@x402/core/types'
+import { SchemeNetworkServer } from '@x402/core/types/mechanisms'
 
 /**
  * MultiversX Server implementation.
  */
-export class ExactMultiversXServer implements ISchemeNetworkServer {
+export class ExactMultiversXServer implements SchemeNetworkServer {
   /**
    * Gets the scheme identifier.
    *
    * @returns The scheme string
    */
   get scheme(): string {
-    return 'multiversx-exact-v1'
+    return 'exact'
   }
 
   /**
@@ -39,7 +40,7 @@ export class ExactMultiversXServer implements ISchemeNetworkServer {
    * @param _network - The network identifier
    * @returns Parse asset and amount
    */
-  async parsePrice(price: unknown, _network: string): Promise<{ asset: string; amount: string }> {
+  async parsePrice(price: Price, _network: Network): Promise<AssetAmount> {
     // Handle Price parsing similar to Go "ParsePrice"
     // Expect object with amount/asset or string
     let amount = '0'
@@ -60,9 +61,23 @@ export class ExactMultiversXServer implements ISchemeNetworkServer {
    * Enhances requirements with defaults.
    *
    * @param requirements - Input requirements
-   * @returns Enhanced requirements   */
+   * @param _supportedKind - The supported kind configuration (unused)
+   * @param _supportedKind.x402Version - The x402 version (unused)
+   * @param _supportedKind.scheme - The scheme identifier (unused)
+   * @param _supportedKind.network - The network identifier (unused)
+   * @param _supportedKind.extra - Extra configuration (unused)
+   * @param _facilitatorExtensions - List of facilitator extensions (unused)
+   * @returns Enhanced requirements
+   */
   async enhancePaymentRequirements(
     requirements: PaymentRequirements,
+    _supportedKind: {
+      x402Version: number
+      scheme: string
+      network: Network
+      extra?: Record<string, unknown>
+    },
+    _facilitatorExtensions: string[],
   ): Promise<PaymentRequirements> {
     // Add defaults
     const req = { ...requirements }
@@ -80,18 +95,5 @@ export class ExactMultiversXServer implements ISchemeNetworkServer {
     }
 
     return req
-  }
-
-  /**
-   * Creates a payment payload (Server-side).
-   *
-   * @param _requirements - The payment requirements
-   * @returns The payment payload
-   */
-  async createPaymentPayload(_requirements: PaymentRequirements): Promise<PaymentPayload> {
-    return {
-      x402Version: 2,
-      payload: {},
-    }
   }
 }

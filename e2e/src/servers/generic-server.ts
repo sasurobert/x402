@@ -98,6 +98,11 @@ export class GenericServerProxy extends BaseProxy implements ServerProxy {
         SVM_RPC_URL: config.networks.svm.rpcUrl,
         SVM_PAYEE_ADDRESS: config.svmPayTo,
 
+        // MultiversX network config
+        MVX_NETWORK: config.networks.multiversx?.caip2 || '',
+        MVX_RPC_URL: config.networks.multiversx?.rpcUrl || '',
+        MVX_PAYEE_ADDRESS: config.mvxPayTo,
+
         // Facilitator
         FACILITATOR_URL: config.facilitatorUrl || '',
       }

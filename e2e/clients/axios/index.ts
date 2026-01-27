@@ -4,6 +4,9 @@ import { wrapAxiosWithPayment, decodePaymentResponseHeader } from "@x402/axios";
 import { privateKeyToAccount } from "viem/accounts";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { registerExactSvmScheme } from "@x402/svm/exact/client";
+import { registerExactMultiversXClientScheme } from "@x402/multiversx/exact/client";
+import { MultiversXSigner } from "@x402/multiversx";
+import { UserSigner, UserSecretKey } from "@multiversx/sdk-wallet";
 import { base58 } from "@scure/base";
 import { createKeyPairSignerFromBytes } from "@solana/kit";
 import { x402Client } from "@x402/core/client";
@@ -22,6 +25,18 @@ const svmSigner = await createKeyPairSignerFromBytes(
 const client = new x402Client();
 registerExactEvmScheme(client, { signer: evmAccount });
 registerExactSvmScheme(client, { signer: svmSigner });
+
+// Register MultiversX if key is provided
+const mvxPrivateKeyHex = process.env.MVX_PRIVATE_KEY;
+if (mvxPrivateKeyHex && mvxPrivateKeyHex.length === 64) {
+  try {
+    const userSigner = new UserSigner(new UserSecretKey(Buffer.from(mvxPrivateKeyHex, "hex")));
+    const mvxSigner = new MultiversXSigner(userSigner);
+    registerExactMultiversXClientScheme(client, { signer: mvxSigner });
+  } catch (e) {
+    console.error("⚠️ Failed to load MultiversX private key");
+  }
+}
 
 const axiosWithPayment = wrapAxiosWithPayment(axios.create(), client);
 

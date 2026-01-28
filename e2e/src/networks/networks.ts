@@ -6,7 +6,7 @@
  */
 
 export type NetworkMode = 'testnet' | 'mainnet';
-export type ProtocolFamily = 'evm' | 'svm';
+export type ProtocolFamily = 'evm' | 'svm' | 'multiversx';
 
 export type NetworkConfig = {
   name: string;
@@ -17,6 +17,7 @@ export type NetworkConfig = {
 export type NetworkSet = {
   evm: NetworkConfig;
   svm: NetworkConfig;
+  multiversx: NetworkConfig;
 };
 
 /**
@@ -34,6 +35,11 @@ const NETWORK_SETS: Record<NetworkMode, NetworkSet> = {
       caip2: 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1',
       rpcUrl: process.env.SOLANA_DEVNET_RPC_URL || 'https://api.devnet.solana.com',
     },
+    multiversx: {
+      name: 'MultiversX Devnet',
+      caip2: 'multiversx:D',
+      rpcUrl: process.env.MULTIVERSX_DEVNET_RPC_URL || 'https://devnet-api.multiversx.com',
+    },
   },
   mainnet: {
     evm: {
@@ -45,6 +51,11 @@ const NETWORK_SETS: Record<NetworkMode, NetworkSet> = {
       name: 'Solana',
       caip2: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
       rpcUrl: process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com',
+    },
+    multiversx: {
+      name: 'MultiversX Mainnet',
+      caip2: 'multiversx:1',
+      rpcUrl: process.env.MULTIVERSX_MAINNET_RPC_URL || 'https://api.multiversx.com',
     },
   },
 };
@@ -81,5 +92,5 @@ export function getNetworkForProtocol(
  */
 export function getNetworkModeDescription(mode: NetworkMode): string {
   const set = NETWORK_SETS[mode];
-  return `${set.evm.name} + ${set.svm.name}`;
+  return `${set.evm.name} + ${set.svm.name} + ${set.multiversx.name}`;
 }

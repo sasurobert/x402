@@ -26,6 +26,9 @@ import { registerExactEvmScheme } from "@x402/evm/exact/facilitator";
 import { BAZAAR, extractDiscoveryInfo } from "@x402/extensions/bazaar";
 import { toFacilitatorSvmSigner } from "@x402/svm";
 import { registerExactSvmScheme } from "@x402/svm/exact/facilitator";
+import { registerExactMultiversXFacilitatorScheme } from "@x402/multiversx/exact/facilitator";
+import { MultiversXSigner } from "@x402/multiversx";
+import { UserSigner, UserSecretKey } from "@multiversx/sdk-wallet";
 import crypto from "crypto";
 import dotenv from "dotenv";
 import express from "express";
@@ -40,8 +43,10 @@ dotenv.config();
 const PORT = process.env.PORT || "4022";
 const EVM_NETWORK = process.env.EVM_NETWORK || "eip155:84532";
 const SVM_NETWORK = process.env.SVM_NETWORK || "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
+const MVX_NETWORK = process.env.MVX_NETWORK || "multiversx:D";
 const EVM_RPC_URL = process.env.EVM_RPC_URL;
 const SVM_RPC_URL = process.env.SVM_RPC_URL;
+const MVX_RPC_URL = process.env.MVX_RPC_URL || "https://devnet-api.multiversx.com";
 
 // Map CAIP-2 network IDs to viem chains
 function getEvmChain(network: string): Chain {
@@ -58,6 +63,7 @@ console.log(`🌐 EVM Network: ${EVM_NETWORK}`);
 console.log(`🌐 SVM Network: ${SVM_NETWORK}`);
 if (EVM_RPC_URL) console.log(`🌐 EVM RPC URL: ${EVM_RPC_URL}`);
 if (SVM_RPC_URL) console.log(`🌐 SVM RPC URL: ${SVM_RPC_URL}`);
+if (MVX_RPC_URL) console.log(`🌐 MVX API URL: ${MVX_RPC_URL}`);
 
 // Validate required environment variables
 if (!process.env.EVM_PRIVATE_KEY) {
@@ -70,65 +76,83 @@ if (!process.env.SVM_PRIVATE_KEY) {
   process.exit(1);
 }
 
-// Initialize the EVM account from private key
-const evmAccount = privateKeyToAccount(process.env.EVM_PRIVATE_KEY as `0x${string}`);
-console.info(`EVM Facilitator account: ${evmAccount.address}`);
+if (!process.env.MVX_PRIVATE_KEY) {
+  console.error("❌ MVX_PRIVATE_KEY environment variable is required");
+  process.exit(1);
+}
 
-
 // Initialize the EVM account from private key
-const svmAccount = await createKeyPairSignerFromBytes(base58.decode(process.env.SVM_PRIVATE_KEY as string));
-console.info(`EVM Facilitator account: ${evmAccount.address}`);
+let evmAccount: any;
+try {
+  evmAccount = privateKeyToAccount(process.env.EVM_PRIVATE_KEY as `0x${string}`);
+  console.info(`EVM Facilitator account: ${evmAccount.address}`);
+} catch (e) {
+  console.warn("⚠️ Failed to load EVM private key");
+}
+
+// Initialize the SVM account from private key
+let svmAccount: any;
+try {
+  svmAccount = await createKeyPairSignerFromBytes(base58.decode(process.env.SVM_PRIVATE_KEY as string));
+  console.info(`SVM Facilitator account: ${svmAccount.address.toString()}`);
+} catch (e) {
+  console.warn("⚠️ Failed to load SVM private key");
+}
+
+// Initialize the MultiversX account from private key
+let mvxSigner: any;
+let mvxSignerAddress: string | undefined;
+try {
+  const mvxPrivateKeyHex = process.env.MVX_PRIVATE_KEY as string;
+  const userSigner = new UserSigner(new UserSecretKey(Buffer.from(mvxPrivateKeyHex, "hex")));
+  mvxSigner = new MultiversXSigner(userSigner);
+  mvxSignerAddress = userSigner.getAddress().bech32();
+  console.info(`MultiversX Facilitator account: ${mvxSignerAddress}`);
+} catch (e) {
+  console.warn("⚠️ Failed to load MultiversX private key");
+}
 
 // Create a Viem client with both wallet and public capabilities
 const evmChain = getEvmChain(EVM_NETWORK);
-const viemClient = createWalletClient({
-  account: evmAccount,
-  chain: evmChain,
-  transport: http(EVM_RPC_URL),
-}).extend(publicActions);
+let evmSigner: any;
+if (evmAccount) {
+  try {
+    const viemClient = createWalletClient({
+      account: evmAccount,
+      chain: evmChain,
+      transport: http(EVM_RPC_URL),
+    }).extend(publicActions);
 
-// Initialize the x402 Facilitator with EVM and SVM support
+    evmSigner = toFacilitatorEvmSigner({
+      address: evmAccount.address,
+      readContract: (args: any) =>
+        viemClient.readContract({
+          ...args,
+          args: args.args || [],
+        }),
+      verifyTypedData: (args: any) => viemClient.verifyTypedData(args as any),
+      writeContract: (args: any) =>
+        viemClient.writeContract({
+          ...args,
+          args: args.args || [],
+        }),
+      sendTransaction: (args: any) => viemClient.sendTransaction(args),
+      waitForTransactionReceipt: (args: any) => viemClient.waitForTransactionReceipt(args),
+      getCode: (args: any) => viemClient.getCode(args),
+    });
+  } catch (e) {
+    console.warn("⚠️ Failed to initialize EVM signer", e);
+  }
+}
 
-const evmSigner = toFacilitatorEvmSigner({
-  address: evmAccount.address,
-  readContract: (args: {
-    address: `0x${string}`;
-    abi: readonly unknown[];
-    functionName: string;
-    args?: readonly unknown[];
-  }) =>
-    viemClient.readContract({
-      ...args,
-      args: args.args || [],
-    }),
-  verifyTypedData: (args: {
-    address: `0x${string}`;
-    domain: Record<string, unknown>;
-    types: Record<string, unknown>;
-    primaryType: string;
-    message: Record<string, unknown>;
-    signature: `0x${string}`;
-  }) => viemClient.verifyTypedData(args as any),
-  writeContract: (args: {
-    address: `0x${string}`;
-    abi: readonly unknown[];
-    functionName: string;
-    args: readonly unknown[];
-  }) =>
-    viemClient.writeContract({
-      ...args,
-      args: args.args || [],
-    }),
-  sendTransaction: (args: { to: `0x${string}`; data: `0x${string}` }) =>
-    viemClient.sendTransaction(args),
-  waitForTransactionReceipt: (args: { hash: `0x${string}` }) =>
-    viemClient.waitForTransactionReceipt(args),
-  getCode: (args: { address: `0x${string}` }) => viemClient.getCode(args),
-});
-
-// Facilitator can now handle all Solana networks with automatic RPC creation
-// Pass custom RPC URL if provided
-const svmSigner = toFacilitatorSvmSigner(svmAccount, SVM_RPC_URL ? { defaultRpcUrl: SVM_RPC_URL } : undefined);
+let svmSigner: any;
+if (svmAccount) {
+  try {
+    svmSigner = toFacilitatorSvmSigner(svmAccount, SVM_RPC_URL ? { defaultRpcUrl: SVM_RPC_URL } : undefined);
+  } catch (e) {
+    console.warn("⚠️ Failed to initialize SVM signer", e);
+  }
+}
 
 const verifiedPayments = new Map<string, number>();
 const bazaarCatalog = new BazaarCatalog();
@@ -143,14 +167,26 @@ function createPaymentHash(paymentPayload: PaymentPayload): string {
 const facilitator = new x402Facilitator();
 
 // Register EVM and SVM schemes using the new register helpers
-registerExactEvmScheme(facilitator, {
-  signer: evmSigner,
-  networks: EVM_NETWORK as Network,
-});
-registerExactSvmScheme(facilitator, {
-  signer: svmSigner,
-  networks: SVM_NETWORK as Network,
-});
+if (evmSigner) {
+  registerExactEvmScheme(facilitator, {
+    signer: evmSigner,
+    networks: EVM_NETWORK as Network,
+  });
+}
+if (svmSigner) {
+  registerExactSvmScheme(facilitator, {
+    signer: svmSigner,
+    networks: SVM_NETWORK as Network,
+  });
+}
+if (mvxSigner) {
+  registerExactMultiversXFacilitatorScheme(facilitator, {
+    apiUrl: MVX_RPC_URL,
+    signer: mvxSigner,
+    signerAddress: mvxSignerAddress,
+    networks: MVX_NETWORK as Network,
+  });
+}
 
 facilitator.registerExtension(BAZAAR)
   // Lifecycle hooks for payment tracking and discovery
@@ -335,6 +371,7 @@ app.get("/health", (req, res) => {
     status: "ok",
     evmNetwork: EVM_NETWORK,
     svmNetwork: SVM_NETWORK,
+    mvxNetwork: MVX_NETWORK,
     facilitator: "typescript",
     version: "2.0.0",
     extensions: [BAZAAR],
@@ -365,7 +402,7 @@ app.listen(parseInt(PORT), () => {
 ║  Server:     http://localhost:${PORT}                  ║
 ║  EVM Network:    ${EVM_NETWORK}                        ║
 ║  SVM Network:    ${SVM_NETWORK}                        ║
-║  Address:    ${evmAccount.address}                        ║
+║  Address:    ${evmAccount?.address || 'not configured'}                        ║
 ║  Extensions: bazaar                                    ║
 ║                                                        ║
 ║  Endpoints:                                            ║

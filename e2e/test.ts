@@ -45,6 +45,7 @@ class FacilitatorManager {
       port: this.port,
       evmPrivateKey: process.env.FACILITATOR_EVM_PRIVATE_KEY,
       svmPrivateKey: process.env.FACILITATOR_SVM_PRIVATE_KEY,
+      mvxPrivateKey: process.env.FACILITATOR_MVX_PRIVATE_KEY,
       networks,
     });
 
@@ -235,10 +236,13 @@ async function runTest() {
   const clientSvmPrivateKey = process.env.CLIENT_SVM_PRIVATE_KEY;
   const facilitatorEvmPrivateKey = process.env.FACILITATOR_EVM_PRIVATE_KEY;
   const facilitatorSvmPrivateKey = process.env.FACILITATOR_SVM_PRIVATE_KEY;
+  const facilitatorMvxPrivateKey = process.env.FACILITATOR_MVX_PRIVATE_KEY;
+  const clientMvxPrivateKey = process.env.CLIENT_MVX_PRIVATE_KEY;
+  const serverMvxAddress = process.env.SERVER_MVX_ADDRESS;
 
-  if (!serverEvmAddress || !serverSvmAddress || !clientEvmPrivateKey || !clientSvmPrivateKey || !facilitatorEvmPrivateKey || !facilitatorSvmPrivateKey) {
+  if (!serverEvmAddress || !serverSvmAddress || !serverMvxAddress || !clientEvmPrivateKey || !clientSvmPrivateKey || !clientMvxPrivateKey || !facilitatorEvmPrivateKey || !facilitatorSvmPrivateKey || !facilitatorMvxPrivateKey) {
     errorLog('❌ Missing required environment variables:');
-    errorLog('   SERVER_EVM_ADDRESS, SERVER_SVM_ADDRESS, CLIENT_EVM_PRIVATE_KEY, CLIENT_SVM_PRIVATE_KEY, FACILITATOR_EVM_PRIVATE_KEY, and FACILITATOR_SVM_PRIVATE_KEY must be set');
+    errorLog('   SERVER_EVM_ADDRESS, SERVER_SVM_ADDRESS, SERVER_MVX_ADDRESS, CLIENT_EVM_PRIVATE_KEY, CLIENT_SVM_PRIVATE_KEY, CLIENT_MVX_PRIVATE_KEY, FACILITATOR_EVM_PRIVATE_KEY, FACILITATOR_SVM_PRIVATE_KEY, and FACILITATOR_MVX_PRIVATE_KEY must be set');
     process.exit(1);
   }
 
@@ -288,7 +292,7 @@ async function runTest() {
 
     filters = parsedArgs.filters;
     selectedExtensions = parsedArgs.filters.extensions;
-    
+
     // In programmatic mode, network mode defaults to testnet if not specified
     networkMode = parsedArgs.networkMode || 'testnet';
 
@@ -307,11 +311,12 @@ async function runTest() {
 
   // Get network configuration based on selected mode
   const networks = getNetworkSet(networkMode);
-  
+
   log(`\n🌐 Network Mode: ${networkMode.toUpperCase()}`);
   log(`   EVM: ${networks.evm.name} (${networks.evm.caip2})`);
   log(`   SVM: ${networks.svm.name} (${networks.svm.caip2})`);
-  
+  log(`   MultiversX: ${networks.multiversx.name} (${networks.multiversx.caip2})`);
+
   if (networkMode === 'mainnet') {
     log('\n⚠️  WARNING: Running on MAINNET - real funds will be used!');
   }
@@ -358,30 +363,30 @@ async function runTest() {
   // Validate environment variables for all selected facilitators
   log('\n🔍 Validating facilitator environment variables...\n');
   const missingEnvVars: { facilitatorName: string; missingVars: string[] }[] = [];
-  
+
   // Environment variables managed by the test framework (don't require user to set)
-  const systemManagedVars = new Set(['PORT', 'EVM_PRIVATE_KEY', 'SVM_PRIVATE_KEY', 'EVM_NETWORK', 'SVM_NETWORK', 'EVM_RPC_URL', 'SVM_RPC_URL']);
-  
+  const systemManagedVars = new Set(['PORT', 'EVM_PRIVATE_KEY', 'SVM_PRIVATE_KEY', 'MVX_PRIVATE_KEY', 'EVM_NETWORK', 'SVM_NETWORK', 'MVX_NETWORK', 'EVM_RPC_URL', 'SVM_RPC_URL', 'MVX_RPC_URL']);
+
   for (const [facilitatorName, facilitator] of uniqueFacilitators) {
     const requiredVars = facilitator.config.environment?.required || [];
     const missing: string[] = [];
-    
+
     for (const envVar of requiredVars) {
       // Skip variables managed by the test framework
       if (systemManagedVars.has(envVar)) {
         continue;
       }
-      
+
       if (!process.env[envVar]) {
         missing.push(envVar);
       }
     }
-    
+
     if (missing.length > 0) {
       missingEnvVars.push({ facilitatorName, missingVars: missing });
     }
   }
-  
+
   if (missingEnvVars.length > 0) {
     errorLog('❌ Missing required environment variables for selected facilitators:\n');
     for (const { facilitatorName, missingVars } of missingEnvVars) {
@@ -391,7 +396,7 @@ async function runTest() {
     errorLog('\n💡 Please set the required environment variables and try again.\n');
     process.exit(1);
   }
-  
+
   log('  ✅ All required environment variables are present\n');
 
   interface DetailedTestResult {
@@ -526,6 +531,7 @@ async function runTest() {
       port,
       evmPayTo: serverEvmAddress,
       svmPayTo: serverSvmAddress,
+      mvxPayTo: serverMvxAddress,
       networks,
       facilitatorUrl,
     };
@@ -547,6 +553,7 @@ async function runTest() {
       const clientConfig: ClientConfig = {
         evmPrivateKey: clientEvmPrivateKey,
         svmPrivateKey: clientSvmPrivateKey,
+        mvxPrivateKey: clientMvxPrivateKey,
         serverUrl: `http://localhost:${port}`,
         endpointPath: scenario.endpoint.path,
       };

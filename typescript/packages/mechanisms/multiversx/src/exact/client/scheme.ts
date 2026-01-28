@@ -1,45 +1,66 @@
 import { PaymentPayload, PaymentRequirements, SchemeNetworkClient } from '@x402/core/types'
 import { MultiversXSigner } from '../../signer'
-import { ExactMultiversXPayload, ExactMultiversXAuthorization } from '../../types'
+import { ExactMultiversXPayload } from '../../types'
 import { ApiNetworkProvider } from '@multiversx/sdk-network-providers'
-import { Account, Address } from '@multiversx/sdk-core'
+import { Address, Transaction, TransactionPayload } from '@multiversx/sdk-core'
+import {
+  CHAIN_ID_DEVNET,
+  CHAIN_ID_MAINNET,
+  CHAIN_ID_TESTNET,
+  MULTIVERSX_API_URL_DEVNET,
+  MULTIVERSX_API_URL_MAINNET,
+  MULTIVERSX_API_URL_TESTNET,
+  MULTIVERSX_GAS_BASE_COST,
+  MULTIVERSX_GAS_MULTI_TRANSFER_COST,
+  MULTIVERSX_GAS_PER_BYTE,
+  MULTIVERSX_GAS_PRICE_DEFAULT,
+  MULTIVERSX_GAS_RELAYED_COST,
+  MULTIVERSX_TRANSFER_METHOD_DIRECT,
+} from '../../constants'
 
 /**
- * MultiversX client implementation for the Exact payment scheme.
+ * MultiversX Client implementation for the Exact payment scheme.
  */
 export class ExactMultiversXScheme implements SchemeNetworkClient {
+  /**
+   * The scheme identifier for this client.
+   */
   readonly scheme = 'exact'
 
   /**
-   * Creates a new Exact MultiversX Scheme client.
+   * Initializes the ExactMultiversXScheme client.
    *
-   * @param signer - The MultiversX signer instance
+   * @param signer - The MultiversX signer to use for transaction creation and signing
    */
   constructor(private readonly signer: MultiversXSigner) { }
 
   /**
-   * Creates a payment payload.
+   * Creates a payment payload for MultiversX by constructing and signing a transaction.
    *
-   * @param x402Version - The protocol version
-   * @param paymentRequirements - The payment requirements
-   * @returns The payment payload wrapper
+   * @param x402Version - The version of the x402 protocol being used
+   * @param paymentRequirements - The requirements for the payment to be made
+   * @returns A partial PaymentPayload containing the version and the MultiversX-specific payload
    */
   async createPaymentPayload(
     x402Version: number,
     paymentRequirements: PaymentRequirements,
   ): Promise<Pick<PaymentPayload, 'x402Version' | 'payload'>> {
+    if (!paymentRequirements.payTo) {
+      throw new Error('PayTo is required')
+    }
+
     const now = Math.floor(Date.now() / 1000)
 
-    // Parse ChainID and Helper for API URL
     const networkParts = paymentRequirements.network.split(':')
-    const chainRef = networkParts.length > 1 ? networkParts[1] : '1'
-    let apiUrl = 'https://api.multiversx.com'
-    if (chainRef === 'D') apiUrl = 'https://devnet-api.multiversx.com'
-    if (chainRef === 'T') apiUrl = 'https://testnet-api.multiversx.com'
+    const chainRef = networkParts.length > 1 ? networkParts[1] : CHAIN_ID_MAINNET
+    let apiUrl = MULTIVERSX_API_URL_MAINNET
+    if (chainRef === CHAIN_ID_DEVNET) apiUrl = MULTIVERSX_API_URL_DEVNET
+    if (chainRef === CHAIN_ID_TESTNET) apiUrl = MULTIVERSX_API_URL_TESTNET
 
-    // Fetch Nonce from Network
     const provider = new ApiNetworkProvider(apiUrl)
-    const senderAddress = new Address(this.signer.address)
+    const senderAddressStr = await this.signer.getAddress()
+
+    const senderAddress = new Address(senderAddressStr)
 
     let nonce = 0
     try {
@@ -49,83 +70,159 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
       console.warn('Failed to fetch account for nonce, defaulting to 0', error)
     }
 
-    // We assume 'paymentRequirements.asset' holds the Token Identifier (EGLD or TokenID)
-    // The 'payTo' is the SC Address.
-    // The 'extra' field contains resourceId.
-
-    const resourceId = paymentRequirements.extra?.resourceId
-    if (typeof resourceId !== 'string' || !resourceId) {
-      throw new Error(
-        'resourceId is required and must be a string in payment requirements extra field',
-      )
+    const transferMethod = paymentRequirements.extra?.assetTransferMethod as string
+    let version = 2
+    if (transferMethod === MULTIVERSX_TRANSFER_METHOD_DIRECT) {
+      version = 1
     }
 
-    const authorization: ExactMultiversXAuthorization = {
-      from: this.signer.address,
-      to: paymentRequirements.payTo,
-      value: paymentRequirements.amount,
-      tokenIdentifier: paymentRequirements.asset, // asset field used as TokenID
-      resourceId: resourceId,
-      validAfter: (now - 600).toString(), // 10 minutes ago
-      validBefore: (now + paymentRequirements.maxTimeoutSeconds).toString(),
-      nonce: nonce,
+    const relayer = paymentRequirements.extra?.relayer as string
+    if (version !== 1 && !relayer) {
+      throw new Error('relayer address is required for relayed transfers')
     }
 
-    const chainId = chainRef
+    const { dataString, receiver, value } = this.constructTransferData(
+      paymentRequirements,
+      senderAddressStr,
+    )
+    const gasLimit = this.calculateGasLimit(paymentRequirements, dataString)
+    const gasPrice = MULTIVERSX_GAS_PRICE_DEFAULT
 
-    const request = {
-      to: authorization.to,
-      amount: authorization.value,
-      tokenIdentifier: authorization.tokenIdentifier,
-      resourceId: authorization.resourceId,
-      chainId: chainId,
-      nonce: authorization.nonce,
+    const validAfter = now - 600
+    let validBefore = now + 600
+    if (paymentRequirements.maxTimeoutSeconds && paymentRequirements.maxTimeoutSeconds > 0) {
+      validBefore = now + paymentRequirements.maxTimeoutSeconds
     }
 
-    const signatureHex = await this.signer.sign(request)
+    const transaction = new Transaction({
+      nonce: BigInt(nonce),
+      value: value,
+      receiver: new Address(receiver),
+      sender: senderAddress,
+      gasLimit: gasLimit,
+      gasPrice: BigInt(gasPrice),
+      data: new TransactionPayload(dataString),
+      chainID: chainRef,
+      version: version,
+    })
 
-    // IMPORTANT: The payload nonce MUST match the signed nonce.
-    // The previous implementation had a placeholder 0.
-    // Now we use the fetched nonce.
+    const signature = await this.signer.signTransaction(transaction)
 
     const payload: ExactMultiversXPayload = {
-      nonce: authorization.nonce!,
-      value: authorization.value,
-      receiver: authorization.to,
-      sender: authorization.from,
-      gasPrice: 1000000000,
-      gasLimit: authorization.tokenIdentifier === 'EGLD' ? 50000 : 60000000,
-      data: '', // Computed/Verified by Facilitator, but we could populate it if we wanted strict parity
-      chainID: chainId,
-      version: 1,
+      nonce,
+      value,
+      receiver,
+      sender: senderAddressStr,
+      gasPrice,
+      gasLimit,
+      data: dataString,
+      chainID: chainRef,
+      version,
       options: 0,
-      signature: signatureHex,
-      authorization, // Optional context
-    }
-
-    // Populate data field for completeness/verification matching
-    if (authorization.tokenIdentifier && authorization.tokenIdentifier !== 'EGLD') {
-      const resourceIdHex = Buffer.from(resourceId, 'utf8').toString('hex')
-      const tokenHex = Buffer.from(authorization.tokenIdentifier, 'utf8').toString('hex')
-      const destAddress = new Address(authorization.to)
-      const destHex = destAddress.hex()
-      let amountBi = BigInt(authorization.value)
-      let amountHex = amountBi.toString(16)
-      if (amountHex.length % 2 !== 0) amountHex = '0' + amountHex
-
-      // MultiESDTNFTTransfer@<DestHex>@01@<TokenHex>@00@<AmountHex>@<ResourceID>
-      const dataString = `MultiESDTNFTTransfer@${destHex}@01@${tokenHex}@00@${amountHex}@${resourceIdHex}`
-      payload.data = Buffer.from(dataString).toString('base64')
-    } else {
-      // EGLD
-      // In signer we did: new TransactionPayload(request.resourceId)
-      // Which is just the string bytes
-      payload.data = Buffer.from(authorization.resourceId).toString('base64')
+      signature,
+      relayer,
+      validAfter,
+      validBefore,
     }
 
     return {
       x402Version,
       payload,
+    }
+  }
+
+  /**
+   * Calculates the gas limit for a MultiversX transaction.
+   *
+   * @param requirements - Payment requirements potentially containing manual gasLimit
+   * @param dataString - The transaction data string
+   * @returns The calculated gas limit
+   */
+  private calculateGasLimit(requirements: PaymentRequirements, dataString: string): number {
+    if (requirements.extra?.gasLimit) {
+      const gl = requirements.extra.gasLimit
+      if (typeof gl === 'number') return gl
+      if (typeof gl === 'string') return parseInt(gl, 10)
+    }
+
+    const asset = requirements.asset
+
+    // Base gas limit calculation mirrored from Go utils.CalculateGasLimit
+    // numTransfers is strictly 1 for this flow
+    const dataBytes = Buffer.from(dataString, 'utf8')
+    let gasLimit =
+      MULTIVERSX_GAS_BASE_COST +
+      MULTIVERSX_GAS_PER_BYTE * dataBytes.length +
+      MULTIVERSX_GAS_MULTI_TRANSFER_COST + // per 1 transfer
+      MULTIVERSX_GAS_RELAYED_COST
+
+    const scFunction = requirements.extra?.scFunction as string
+    const isScCall = !!scFunction || asset !== 'EGLD'
+
+    if (isScCall) {
+      gasLimit += 10_000_000
+    }
+
+    return gasLimit
+  }
+
+  /**
+   * Constructs the MultiversX transaction data and resolves destination/value.
+   *
+   * @param requirements - The payment requirements
+   * @param senderAddressStr - The sender's bech32 address
+   * @returns The data string, receiver address, and value string
+   */
+  private constructTransferData(
+    requirements: PaymentRequirements,
+    senderAddressStr: string,
+  ): { dataString: string; receiver: string; value: string } {
+    const asset = requirements.asset
+    const scFunction = requirements.extra?.scFunction as string
+    const args: string[] = []
+    if (Array.isArray(requirements.extra?.arguments)) {
+      requirements.extra.arguments.forEach((arg) => {
+        if (typeof arg === 'string') args.push(arg)
+      })
+    }
+
+    if (asset && asset !== 'EGLD') {
+      const destAddress = new Address(requirements.payTo)
+      const destHex = destAddress.hex()
+      const tokenHex = Buffer.from(asset, 'utf8').toString('hex')
+
+      let amountBi = BigInt(requirements.amount)
+      let amountHex = amountBi.toString(16)
+      if (amountHex.length % 2 !== 0) amountHex = '0' + amountHex
+
+      const parts = ['MultiESDTNFTTransfer', destHex, '01', tokenHex, '00', amountHex]
+
+      if (scFunction) {
+        parts.push(Buffer.from(scFunction, 'utf8').toString('hex'))
+        if (args.length > 0) {
+          parts.push(...args)
+        }
+      }
+
+      return {
+        dataString: parts.join('@'),
+        receiver: senderAddressStr,
+        value: '0',
+      }
+    }
+
+    const parts: string[] = []
+    if (scFunction) {
+      parts.push(scFunction)
+      if (args.length > 0) {
+        parts.push(...args)
+      }
+    }
+
+    return {
+      dataString: parts.join('@'),
+      receiver: requirements.payTo,
+      value: requirements.amount,
     }
   }
 }

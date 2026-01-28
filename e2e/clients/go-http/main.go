@@ -12,9 +12,11 @@ import (
 	x402http "github.com/coinbase/x402/go/http"
 	evm "github.com/coinbase/x402/go/mechanisms/evm/exact/client"
 	evmv1 "github.com/coinbase/x402/go/mechanisms/evm/exact/v1/client"
+	multiversx "github.com/coinbase/x402/go/mechanisms/multiversx/exact/client"
 	svm "github.com/coinbase/x402/go/mechanisms/svm/exact/client"
 	svmv1 "github.com/coinbase/x402/go/mechanisms/svm/exact/v1/client"
 	evmsigners "github.com/coinbase/x402/go/signers/evm"
+	mvxsigners "github.com/coinbase/x402/go/signers/multiversx"
 	svmsigners "github.com/coinbase/x402/go/signers/svm"
 )
 
@@ -49,6 +51,11 @@ func main() {
 		log.Fatal("❌ SVM_PRIVATE_KEY environment variable is required")
 	}
 
+	mvxPrivateKey := os.Getenv("MVX_PRIVATE_KEY")
+	if mvxPrivateKey == "" {
+		log.Fatal("❌ MVX_PRIVATE_KEY environment variable is required")
+	}
+
 	evmSigner, err := evmsigners.NewClientSignerFromPrivateKey(evmPrivateKey)
 	if err != nil {
 		outputError(fmt.Sprintf("Failed to create EVM signer: %v", err))
@@ -61,10 +68,17 @@ func main() {
 		return
 	}
 
+	mvxSigner, err := mvxsigners.NewClientSignerFromPrivateKey(mvxPrivateKey)
+	if err != nil {
+		outputError(fmt.Sprintf("Failed to create MultiversX signer: %v", err))
+		return
+	}
+
 	// Create x402 client with fluent API
 	x402Client := x402.Newx402Client().
 		Register("eip155:*", evm.NewExactEvmScheme(evmSigner)).
 		Register("solana:*", svm.NewExactSvmScheme(svmSigner)).
+		Register("multiversx:*", multiversx.NewExactMultiversXScheme(mvxSigner)).
 		RegisterV1("base-sepolia", evmv1.NewExactEvmSchemeV1(evmSigner)).
 		RegisterV1("base", evmv1.NewExactEvmSchemeV1(evmSigner)).
 		RegisterV1("solana-devnet", svmv1.NewExactSvmSchemeV1(svmSigner)).

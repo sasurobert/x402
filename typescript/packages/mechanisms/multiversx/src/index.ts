@@ -1,22 +1,13 @@
-import { registerScheme } from '@x402/core'
-import { ExactMultiversXScheme } from './exact/client/scheme'
-import { ExactMultiversXFacilitator } from './exact/facilitator/scheme'
-import { ExactMultiversXServer } from './exact/server/scheme'
-
 export * from './signer'
 export * from './types'
 export * from './constants'
 export { ExactMultiversXScheme } from './exact/client/scheme'
 export { ExactMultiversXFacilitator } from './exact/facilitator/scheme'
 export { ExactMultiversXServer } from './exact/server/scheme'
-
-/**
- * Registers the MultiversX Exact scheme.
- */
-export function registerYourChainScheme() {
-  registerScheme('multiversx-exact-v1', {
-    client: ExactMultiversXScheme,
-    facilitator: ExactMultiversXFacilitator,
-    server: ExactMultiversXServer,
-  })
-}
+export { registerExactMultiversXClientScheme } from './exact/client/register'
+export { registerExactMultiversXServerScheme } from './exact/server/register'
+export { registerExactMultiversXFacilitatorScheme } from './exact/facilitator/register'
+// Unified exports for ease of use in E2E
+export * from './exact/client'
+export * from './exact/server'
+export * from './exact/facilitator'

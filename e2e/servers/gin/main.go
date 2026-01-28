@@ -14,6 +14,7 @@ import (
 	x402http "github.com/coinbase/x402/go/http"
 	ginmw "github.com/coinbase/x402/go/http/gin"
 	evm "github.com/coinbase/x402/go/mechanisms/evm/exact/server"
+	multiversx "github.com/coinbase/x402/go/mechanisms/multiversx/exact/server"
 	svm "github.com/coinbase/x402/go/mechanisms/svm/exact/server"
 	ginfw "github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -52,6 +53,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	mvxPayeeAddress := os.Getenv("MVX_PAYEE_ADDRESS")
+	if mvxPayeeAddress == "" {
+		fmt.Println("❌ MVX_PAYEE_ADDRESS environment variable is required")
+		os.Exit(1)
+	}
+
 	facilitatorURL := os.Getenv("FACILITATOR_URL")
 	if facilitatorURL == "" {
 		fmt.Println("❌ FACILITATOR_URL environment variable is required")
@@ -67,11 +74,17 @@ func main() {
 	if svmNetworkStr == "" {
 		svmNetworkStr = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1" // Default: Solana Devnet
 	}
+	mvxNetworkStr := os.Getenv("MVX_NETWORK")
+	if mvxNetworkStr == "" {
+		mvxNetworkStr = "multiversx:D" // Default: MultiversX Devnet
+	}
 	evmNetwork := x402.Network(evmNetworkStr)
 	svmNetwork := x402.Network(svmNetworkStr)
+	mvxNetwork := x402.Network(mvxNetworkStr)
 
 	fmt.Printf("EVM Payee address: %s\n", evmPayeeAddress)
 	fmt.Printf("SVM Payee address: %s\n", svmPayeeAddress)
+	fmt.Printf("MVX Payee address: %s\n", mvxPayeeAddress)
 	fmt.Printf("Using remote facilitator at: %s\n", facilitatorURL)
 
 	// Set Gin to release mode to reduce logs
@@ -141,6 +154,19 @@ func main() {
 				types.BAZAAR: discoveryExtension,
 			},
 		},
+		"GET /protected-mvx": {
+			Accepts: x402http.PaymentOptions{
+				{
+					Scheme:  "exact",
+					PayTo:   mvxPayeeAddress,
+					Price:   "$0.001",
+					Network: mvxNetwork,
+				},
+			},
+			Extensions: map[string]interface{}{
+				types.BAZAAR: discoveryExtension,
+			},
+		},
 	}
 
 	// Apply payment middleware with detailed error logging
@@ -150,9 +176,10 @@ func main() {
 		Schemes: []ginmw.SchemeConfig{
 			{Network: evmNetwork, Server: evm.NewExactEvmScheme()},
 			{Network: svmNetwork, Server: svm.NewExactSvmScheme()},
+			{Network: mvxNetwork, Server: multiversx.NewExactMultiversXScheme()},
 		},
 		SyncFacilitatorOnStart: true,
-		Timeout:    30 * time.Second,
+		Timeout:                30 * time.Second,
 		ErrorHandler: func(c *ginfw.Context, err error) {
 			// Log detailed error information for debugging
 			fmt.Printf("❌ [E2E SERVER ERROR] Payment error occurred\n")
@@ -219,6 +246,27 @@ func main() {
 	})
 
 	/**
+	 * Protected MultiversX endpoint - requires payment to access
+	 *
+	 * This endpoint demonstrates a MultiversX payment protected resource.
+	 * Clients must provide a valid payment signature to access this endpoint.
+	 */
+	r.GET("/protected-mvx", func(c *ginfw.Context) {
+		if shutdownRequested {
+			c.JSON(http.StatusServiceUnavailable, ginfw.H{
+				"error": "Server shutting down",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, ginfw.H{
+			"message":   "Protected endpoint accessed successfully (MultiversX)",
+			"timestamp": time.Now().Format(time.RFC3339),
+			"network":   string(mvxNetwork),
+		})
+	})
+
+	/**
 	 * Health check endpoint - no payment required
 	 *
 	 * Used to verify the server is running and responsive.
@@ -231,6 +279,8 @@ func main() {
 			"evm_payee":   evmPayeeAddress,
 			"svm_network": string(svmNetwork),
 			"svm_payee":   svmPayeeAddress,
+			"mvx_network": string(mvxNetwork),
+			"mvx_payee":   mvxPayeeAddress,
 		})
 	})
 
@@ -274,14 +324,16 @@ func main() {
 ║  EVM Payee:   %-40s ║
 ║  SVM Network: %-40s ║
 ║  SVM Payee:   %-40s ║
+║  MVX Payee:   %-40s ║
 ║                                                        ║
 ║  Endpoints:                                            ║
 ║  • GET  /protected      (requires $0.001 EVM payment) ║
 ║  • GET  /protected-svm  (requires $0.001 SVM payment) ║
+║  • GET  /protected-mvx  (requires $0.001 MVX payment) ║
 ║  • GET  /health         (no payment required)         ║
 ║  • POST /close          (shutdown server)             ║
 ╚════════════════════════════════════════════════════════╝
-`, port, evmNetwork, evmPayeeAddress, svmNetwork, svmPayeeAddress)
+`, port, evmNetwork, evmPayeeAddress, svmNetwork, svmPayeeAddress, mvxPayeeAddress)
 
 	server := &http.Server{
 		Addr:    ":" + port,

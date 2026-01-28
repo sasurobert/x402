@@ -13,6 +13,8 @@
         "@multiversx/sdk-core": "^13.0.0",
         "@multiversx/sdk-network-providers": "^2.9.3",
         "@multiversx/sdk-wallet": "^4.0.0",
+        "@noble/ed25519": "^3.0.0",
+        "@noble/hashes": "^2.0.1",
         "@x402/core": "workspace:^",
         "zod": "^3.24.2"
     },
@@ -29,6 +31,48 @@
         "tsup": "^8.4.0",
         "typescript": "^5.7.3",
         "vitest": "^3.0.5"
+    },
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./dist/esm/index.d.mts",
+                "default": "./dist/esm/index.mjs"
+            },
+            "require": {
+                "types": "./dist/cjs/index.d.ts",
+                "default": "./dist/cjs/index.js"
+            }
+        },
+        "./exact/client": {
+            "import": {
+                "types": "./dist/esm/exact/client/index.d.mts",
+                "default": "./dist/esm/exact/client/index.mjs"
+            },
+            "require": {
+                "types": "./dist/cjs/exact/client/index.d.ts",
+                "default": "./dist/cjs/exact/client/index.js"
+            }
+        },
+        "./exact/server": {
+            "import": {
+                "types": "./dist/esm/exact/server/index.d.mts",
+                "default": "./dist/esm/exact/server/index.mjs"
+            },
+            "require": {
+                "types": "./dist/cjs/exact/server/index.d.ts",
+                "default": "./dist/cjs/exact/server/index.js"
+            }
+        },
+        "./exact/facilitator": {
+            "import": {
+                "types": "./dist/esm/exact/facilitator/index.d.mts",
+                "default": "./dist/esm/exact/facilitator/index.mjs"
+            },
+            "require": {
+                "types": "./dist/cjs/exact/facilitator/index.d.ts",
+                "default": "./dist/cjs/exact/facilitator/index.js"
+            }
+        }
     },
     "files": [
         "dist"

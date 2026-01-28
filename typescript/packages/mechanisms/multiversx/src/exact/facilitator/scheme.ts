@@ -11,55 +11,55 @@ import { MultiversXSigner } from '../../signer'
 import { Transaction, Address, TransactionPayload } from '@multiversx/sdk-core'
 
 /**
- * MultiversX Facilitator for Exact scheme.
+ * MultiversX Facilitator implementation for the Exact payment scheme.
  */
 export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
   /**
-   * Creates a new facilitator with API URL.
+   * Initializes the ExactMultiversXFacilitator.
    *
-   * @param apiUrl - The MultiversX API URL (default: devnet)
-   * @param signer - Optional signer for Relayed V3 transactions
+   * @param apiUrl - The MultiversX API URL to use for simulations and status checks
+   * @param signer - Optional MultiversX signer for relaying transactions
    * @param signerAddress - Optional address of the signer
    */
   constructor(
     private apiUrl: string = 'https://devnet-api.multiversx.com',
     private signer?: MultiversXSigner,
     private signerAddress?: string,
-  ) {}
+  ) { }
 
   /**
-   * Gets the mechanism code.
+   * The scheme identifier for this facilitator.
    *
-   * @returns The scheme identifier
+   * @returns The string 'exact'
    */
   get scheme(): string {
     return 'exact'
   }
 
   /**
-   * Gets the CAIP family.
+   * The CAIP-compatible family identifier for MultiversX.
    *
-   * @returns The CAIP family string
+   * @returns The wildcard 'multiversx:*'
    */
   get caipFamily(): string {
     return 'multiversx:*'
   }
 
   /**
-   * Gets extra configuration for the network.
+   * Gets extra configuration for a specific network.
    *
    * @param _network - The network identifier
-   * @returns Extra config object
+   * @returns An empty record as no extra config is needed by default
    */
   getExtra(_network: Network): Record<string, unknown> {
     return {}
   }
 
   /**
-   * Gets list of signers for the network.
+   * Gets the list of addresses authorized to sign or facilitate for a network.
    *
    * @param _network - The network identifier
-   * @returns Array of signer addresses
+   * @returns Array containing the signer address if provided
    */
   getSigners(_network: Network | string): string[] {
     if (this.signerAddress) return [this.signerAddress]
@@ -67,20 +67,19 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
   }
 
   /**
-   * Verifies the payment payload.
+   * Verifies that a payment payload matches the requirements and is cryptographically valid.
    *
-   * @param payload - The payment payload
-   * @param requirements - The payment requirements
-   * @returns Validation response
+   * @param payload - The payment payload to verify
+   * @param requirements - The original payment requirements to match against
+   * @returns A response indicating if the payload is valid
    */
   async verify(
     payload: PaymentPayload,
     requirements: PaymentRequirements,
   ): Promise<VerifyResponse> {
     const relayedPayload = payload.payload as unknown as ExactMultiversXPayload
-
-    // Check time constraints
     const now = Math.floor(Date.now() / 1000)
+
     if (
       relayedPayload.validBefore &&
       relayedPayload.validBefore > 0 &&
@@ -107,7 +106,6 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
     const asset = requirements.asset || 'EGLD'
 
     if (asset !== 'EGLD') {
-      // ESDT
       if (relayedPayload.receiver !== relayedPayload.sender) {
         return {
           isValid: false,
@@ -148,7 +146,6 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
         }
       }
     } else {
-      // EGLD
       if (relayedPayload.receiver !== expectedReceiver) {
         return {
           isValid: false,
@@ -166,23 +163,20 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
       }
     }
 
-    // Step 1: Verify Ed25519 signature to ensure sender authorized the transaction
     const signatureValid = await this.verifySignature(relayedPayload)
     if (!signatureValid.isValid) {
       return signatureValid
     }
 
-    // Step 2: Simulate transaction to validate it will succeed on-chain
-    // This provides additional safety by catching issues before broadcasting
     return this.verifyViaSimulation(relayedPayload)
   }
 
   /**
-   * Settles the payment by broadcasting the transaction.
+   * Broadcasts the payment transaction to the MultiversX network.
    *
-   * @param payload - The payment payload
-   * @param requirements - The payment requirements
-   * @returns Settle response
+   * @param payload - The payment payload to settle
+   * @param requirements - The requirements for the payment
+   * @returns A response indicating if the settlement was successful and the transaction hash
    */
   async settle(
     payload: PaymentPayload,
@@ -191,15 +185,7 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
     const relayedPayload = payload.payload as unknown as ExactMultiversXPayload
     const network = requirements.network as Network
     const payer = relayedPayload.sender
-
-    // Attempt to sign as relayer if credentials provided and signature is missing
     let relayerSig = relayedPayload.relayerSignature
-    const relayerAddr = relayedPayload.relayer
-
-    // Attempt relay signing if supported/needed
-    if (this.signer && this.signerAddress && relayerAddr === this.signerAddress && !relayerSig) {
-      // Relayer signing implementation would go here
-    }
 
     try {
       const txSendBody = {
@@ -250,7 +236,6 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
         }
       }
 
-      // Parity Feature: Wait for Transaction
       try {
         await this.waitForTx(txHash)
       } catch (waitError: unknown) {
@@ -277,10 +262,10 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
   }
 
   /**
-   * Verifies the payload via simulation.
+   * Performs an on-chain simulation of the transaction to verify its validity.
    *
-   * @param payload - The payload to verify
-   * @returns Validation response
+   * @param payload - The payload to simulate
+   * @returns A verification response based on simulation results
    */
   private async verifyViaSimulation(payload: ExactMultiversXPayload): Promise<VerifyResponse> {
     try {
@@ -288,27 +273,24 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
       const relayerAddr = payload.relayer
 
       if (this.signer && this.signerAddress && relayerAddr === this.signerAddress && !relayerSig) {
-        // We are the relayer and need to sign
         const txToSign = new Transaction({
           nonce: BigInt(payload.nonce),
           value: payload.value,
           receiver: new Address(payload.receiver),
           sender: new Address(payload.sender),
           gasLimit: payload.gasLimit,
-          gasPrice: BigInt(payload.gasPrice), // SDK expects bigint?
+          gasPrice: BigInt(payload.gasPrice),
           data: new TransactionPayload(payload.data),
           chainID: payload.chainID,
           version: payload.version,
           options: payload.options,
         })
 
-        // Apply existing signature
         txToSign.applySignature(Buffer.from(payload.signature || '', 'hex'))
 
-        // Set Relayer
         if (relayerAddr) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(txToSign as any).relayer = new Address(relayerAddr)
+          ; (txToSign as any).relayer = new Address(relayerAddr)
         }
 
         relayerSig = await this.signer.signTransaction(txToSign)
@@ -326,7 +308,7 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
         version: payload.version,
         signature: payload.signature,
         relayer: payload.relayer,
-        relayerSignature: relayerSig, // might be empty
+        relayerSignature: relayerSig,
       }
 
       const response = await fetch(`${this.apiUrl}/transaction/simulate`, {
@@ -347,7 +329,6 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
         simResult.data?.result?.status !== 'success' &&
         simResult.data?.result?.status !== 'successful'
       ) {
-        // Check return message
         const failReason = simResult.data?.result?.returnMessage || simResult.data?.result?.status
         return {
           isValid: false,
@@ -363,11 +344,10 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
   }
 
   /**
-   * Verifies the Ed25519 signature of the transaction (crypto-only, no blockchain call).
-   * This matches EVM's signature verification pattern - simulation happens in settle.
+   * Verifies the Ed25519 signature of the transaction.
    *
-   * @param payload - The payload to verify
-   * @returns Validation response
+   * @param payload - The payload containing the signature and transaction data
+   * @returns A verification response based on the cryptographic check
    */
   private async verifySignature(payload: ExactMultiversXPayload): Promise<VerifyResponse> {
     try {
@@ -375,7 +355,6 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
         return { isValid: false, invalidReason: 'Missing signature' }
       }
 
-      // Reconstruct the transaction for signature verification
       const tx = new Transaction({
         nonce: BigInt(payload.nonce),
         value: payload.value,
@@ -389,20 +368,16 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
         options: payload.options,
       })
 
-      // Get the message to verify (transaction bytes for signing)
       const { TransactionComputer } = await import('@multiversx/sdk-core')
       const txComputer = new TransactionComputer()
       const serializedTx = txComputer.computeBytesForSigning(tx)
 
-      // Verify signature using @noble/ed25519 (v3 API)
       const ed = await import('@noble/ed25519')
 
-      // Get public key from sender address
       const senderAddress = new Address(payload.sender)
       const publicKeyBytes = senderAddress.getPublicKey()
       const signatureBytes = Buffer.from(payload.signature, 'hex')
 
-      // ed25519 v3 verify returns a Promise<boolean>
       const isValid = await ed.verifyAsync(signatureBytes, serializedTx, publicKeyBytes)
 
       if (!isValid) {
@@ -417,12 +392,13 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
   }
 
   /**
-   * Polls the transaction status until success or failure/timeout.
+   * Status check helper that polls the MultiversX API until a transaction is finalized or fails.
    *
-   * @param txHash - The transaction hash to wait for
+   * @param txHash - The hash of the transaction to poll for
+   * @throws Error if the transaction fails or timeouts
    */
   private async waitForTx(txHash: string): Promise<void> {
-    const timeoutMs = 120000 // 120 seconds
+    const timeoutMs = 120000
     const pollIntervalMs = 2000
     const startTime = Date.now()
 
@@ -430,37 +406,26 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
       try {
         const response = await fetch(`${this.apiUrl}/transaction/${txHash}/status`)
         if (!response.ok) {
-          // Transient error, retry
           await new Promise((r) => setTimeout(r, pollIntervalMs))
           continue
         }
 
         const res = await response.json()
-        const status = res.data?.status || res.status // handle different API response shapes
+        const status = res.data?.status || res.status
 
         if (['success', 'successful', 'executed'].includes(status)) {
           return
         }
         if (['fail', 'failed', 'invalid'].includes(status)) {
-          // Fetch error detail
           let errorMsg = `Transaction status: ${status}`
           try {
-            const infoRes = await fetch(`${this.apiUrl}/transaction/${txHash}`)
-            if (infoRes.ok) {
-              await infoRes.json()
-              // Try deeper path first (e.g. data.transaction.smartContractResults...) or just top level error
-              // Standard API usually puts error in data.transaction.error or execution code
-              // We'll stick to simple status for parity unless we parse full info
-            }
-          } catch {} // best effort
+            await fetch(`${this.apiUrl}/transaction/${txHash}`)
+          } catch { }
           throw new Error(errorMsg)
         }
-        // pending, processing, etc.
         await new Promise((r) => setTimeout(r, pollIntervalMs))
       } catch (e) {
-        // If it's the error we threw, rethrow
         if (e instanceof Error && e.message.startsWith('Transaction status')) throw e
-        // Otherwise transient network error, retry
         await new Promise((r) => setTimeout(r, pollIntervalMs))
       }
     }

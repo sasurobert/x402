@@ -3,35 +3,29 @@ import { Network } from '@x402/core/types'
 import { ExactMultiversXServer } from './scheme'
 
 /**
- * Configuration options for registering MultiversX schemes to an x402ResourceServer
+ * Configuration for the MultiversX resource server scheme.
  */
 export interface MultiversXResourceServerConfig {
-  /**
-   * Optional specific networks to register
-   * If not provided, registers wildcard support (multiversx:*)
-   */
+  /** Optional list of networks to register against. Defaults to 'multiversx:*' */
   networks?: Network[]
 }
 
 /**
- * Registers MultiversX exact payment schemes to an x402ResourceServer instance.
+ * Registers the Exact MultiversX server scheme with the x402 resource server.
  *
- * @param server - The x402ResourceServer instance to register schemes to
- * @param config - Configuration for MultiversX resource server registration
- * @returns The server instance for chaining
+ * @param server - The x402 resource server instance
+ * @param config - The configuration for the MultiversX scheme
+ * @returns The modified server instance
  */
 export function registerExactMultiversXServerScheme(
   server: x402ResourceServer,
   config: MultiversXResourceServerConfig = {},
 ): x402ResourceServer {
-  // Register scheme
   if (config.networks && config.networks.length > 0) {
-    // Register specific networks
     config.networks.forEach((network) => {
       server.register(network, new ExactMultiversXServer())
     })
   } else {
-    // Register wildcard for all MultiversX chains
     server.register('multiversx:*', new ExactMultiversXServer())
   }
 

@@ -4,34 +4,25 @@ import { MultiversXSigner } from '../../signer'
 import { ExactMultiversXFacilitator } from './scheme'
 
 /**
- * Configuration options for registering MultiversX facilitator schemes
+ * Configuration for the MultiversX facilitator scheme.
  */
 export interface MultiversXFacilitatorConfig {
-  /**
-   * The MultiversX API URL
-   */
+  /** Optional API URL for the MultiversX network */
   apiUrl?: string
-  /**
-   * Optional signer for Relayed V3 transactions
-   */
+  /** Optional signer instance for relativistic transaction relaying */
   signer?: MultiversXSigner
-  /**
-   * Optional address of the signer
-   */
+  /** Optional address of the signer */
   signerAddress?: string
-  /**
-   * Optional specific networks to register
-   * If not provided, registers wildcard support (multiversx:*)
-   */
+  /** Optional list of networks to register against. Defaults to 'multiversx:*' */
   networks?: Network | Network[]
 }
 
 /**
- * Registers MultiversX exact payment schemes to an x402Facilitator instance.
+ * Registers the Exact MultiversX facilitator scheme with the x402 facilitator.
  *
- * @param facilitator - The x402Facilitator instance to register schemes to
- * @param config - Configuration for MultiversX facilitator registration
- * @returns The facilitator instance for chaining
+ * @param facilitator - The x402 facilitator instance
+ * @param config - The configuration for the MultiversX scheme
+ * @returns The modified facilitator instance
  */
 export function registerExactMultiversXFacilitatorScheme(
   facilitator: x402Facilitator,

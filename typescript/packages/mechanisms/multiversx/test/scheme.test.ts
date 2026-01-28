@@ -17,7 +17,6 @@ describe('ExactMultiversXScheme', () => {
   const scheme = new ExactMultiversXScheme(mockSigner)
 
   it('should create a valid payment payload', async () => {
-    // Mock Provider return value
     vi.mock('@multiversx/sdk-network-providers', () => ({
       ApiNetworkProvider: vi.fn().mockImplementation(() => ({
         getAccount: vi.fn().mockResolvedValue({ nonce: 7 }),
@@ -40,7 +39,6 @@ describe('ExactMultiversXScheme', () => {
     const exactPayload = payload as ExactMultiversXPayload
 
     expect(x402Version).toBe(1)
-
     expect(exactPayload.signature).toBe('mock_sig_hex')
     expect(exactPayload.nonce).toBe(7)
     expect(exactPayload.value).toBe('1000')
@@ -49,7 +47,6 @@ describe('ExactMultiversXScheme', () => {
     expect(exactPayload.chainID).toBe('D')
     expect(exactPayload.version).toBe(2)
 
-    // Check auto-calculated fields
     const now = Math.floor(Date.now() / 1000)
     expect(exactPayload.validBefore).toBeGreaterThan(now)
     expect(exactPayload.validAfter).toBeLessThanOrEqual(now)

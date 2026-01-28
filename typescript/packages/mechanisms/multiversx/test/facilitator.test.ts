@@ -18,12 +18,10 @@ describe('ExactMultiversXFacilitator', () => {
 
   beforeEach(() => {
     facilitator = new ExactMultiversXFacilitator('https://mock-api.com')
-    // Mock global fetch
     global.fetch = vi.fn()
   })
 
   it('should verify a valid EGLD payload', async () => {
-    // Mock signature verification since we use fake signatures in tests
     vi.spyOn(facilitator as any, 'verifySignature').mockResolvedValue({ isValid: true })
 
     const payload: ExactMultiversXPayload = {
@@ -57,15 +55,14 @@ describe('ExactMultiversXFacilitator', () => {
       payload: payload as any,
     }
 
-    // Mock successful simulation
-    ;(global.fetch as any).mockResolvedValue({
-      ok: true,
-      headers: { get: () => 'application/json' },
-      json: async () => ({
-        data: { result: { status: 'success', hash: 'tx-hash' } },
-        code: 'successful',
-      }),
-    })
+      ; (global.fetch as any).mockResolvedValue({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({
+          data: { result: { status: 'success', hash: 'tx-hash' } },
+          code: 'successful',
+        }),
+      })
 
     const result = await facilitator.verify(fullPayload, req)
     expect(result.isValid).toBe(true)
@@ -81,7 +78,7 @@ describe('ExactMultiversXFacilitator', () => {
       gasLimit: 50000,
       chainID: 'D',
       version: 2,
-      validBefore: Math.floor(Date.now() / 1000) - 100, // Expired
+      validBefore: Math.floor(Date.now() / 1000) - 100,
     }
     const req: PaymentRequirements = {
       scheme: 'exact',
@@ -108,7 +105,7 @@ describe('ExactMultiversXFacilitator', () => {
   it('should fail if verification logic mismatches', async () => {
     const payload: ExactMultiversXPayload = {
       nonce: 10,
-      value: '500', // too low
+      value: '500',
       receiver: bob,
       sender: alice,
       gasPrice: 1000000000,
@@ -166,17 +163,15 @@ describe('ExactMultiversXFacilitator', () => {
       payload: payload as any,
     }
 
-    // Mock send response
-    ;(global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ data: { txHash: 'tx-123' } }),
-    })
+      ; (global.fetch as any).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { txHash: 'tx-123' } }),
+      })
 
-    // Mock wait status response (success immediately)
-    ;(global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ data: { status: 'success' } }),
-    })
+      ; (global.fetch as any).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { status: 'success' } }),
+      })
 
     const result = await facilitator.settle(fullPayload, req)
     expect(result.success).toBe(true)
@@ -184,7 +179,6 @@ describe('ExactMultiversXFacilitator', () => {
   })
 
   it('should verify a valid ESDT payload', async () => {
-    // Mock signature verification since we use fake signatures in tests
     vi.spyOn(facilitator as any, 'verifySignature').mockResolvedValue({ isValid: true })
 
     const asset = 'TEST-123456'
@@ -193,13 +187,12 @@ describe('ExactMultiversXFacilitator', () => {
     const tokenHex = Buffer.from(asset, 'utf8').toString('hex')
     const destHex = new Address(bob).hex()
 
-    // MultiESDTNFTTransfer @ DestHex @ 01 @ TokenHex @ 00 @ AmountHex
     const data = `MultiESDTNFTTransfer@${destHex}@01@${tokenHex}@00@${amountHex}`
 
     const payload: ExactMultiversXPayload = {
       nonce: 10,
       value: '0',
-      receiver: alice, // Self
+      receiver: alice,
       sender: alice,
       gasPrice: 1000000000,
       gasLimit: 60000000,
@@ -226,13 +219,12 @@ describe('ExactMultiversXFacilitator', () => {
       payload: payload as any,
     }
 
-    // Mock successful simulation
-    ;(global.fetch as any).mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: { result: { status: 'success' } },
-      }),
-    })
+      ; (global.fetch as any).mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: { result: { status: 'success' } },
+        }),
+      })
 
     const result = await facilitator.verify(fullPayload, req)
     expect(result.isValid).toBe(true)

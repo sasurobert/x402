@@ -5,24 +5,27 @@ import { ApiNetworkProvider } from '@multiversx/sdk-network-providers'
 import { Address, Transaction, TransactionPayload } from '@multiversx/sdk-core'
 
 /**
- * MultiversX client implementation for the Exact payment scheme.
+ * MultiversX Client implementation for the Exact payment scheme.
  */
 export class ExactMultiversXScheme implements SchemeNetworkClient {
+  /**
+   * The scheme identifier for this client.
+   */
   readonly scheme = 'exact'
 
   /**
-   * Creates a new Exact MultiversX Scheme client.
+   * Initializes the ExactMultiversXScheme client.
    *
-   * @param signer - The MultiversX signer instance
+   * @param signer - The MultiversX signer to use for transaction creation and signing
    */
-  constructor(private readonly signer: MultiversXSigner) {}
+  constructor(private readonly signer: MultiversXSigner) { }
 
   /**
-   * Creates a payment payload.
+   * Creates a payment payload for MultiversX by constructing and signing a transaction.
    *
-   * @param x402Version - The protocol version
-   * @param paymentRequirements - The payment requirements
-   * @returns The payment payload wrapper
+   * @param x402Version - The version of the x402 protocol being used
+   * @param paymentRequirements - The requirements for the payment to be made
+   * @returns A partial PaymentPayload containing the version and the MultiversX-specific payload
    */
   async createPaymentPayload(
     x402Version: number,
@@ -34,7 +37,6 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
 
     const now = Math.floor(Date.now() / 1000)
 
-    // Parse ChainID and Helper for API URL
     const networkParts = paymentRequirements.network.split(':')
     const chainRef = networkParts.length > 1 ? networkParts[1] : '1'
     let apiUrl = 'https://api.multiversx.com'
@@ -59,7 +61,6 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
       console.warn('Failed to fetch account for nonce, defaulting to 0', error)
     }
 
-    // Parse specific requirements
     let gasLimit = 50_000
     if (paymentRequirements.extra?.gasLimit) {
       const gl = paymentRequirements.extra.gasLimit
@@ -101,7 +102,6 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
 
       const destAddress = new Address(paymentRequirements.payTo)
       const destHex = destAddress.hex()
-
       const tokenHex = Buffer.from(asset, 'utf8').toString('hex')
 
       let amountBi = BigInt(paymentRequirements.amount)
@@ -138,22 +138,17 @@ export class ExactMultiversXScheme implements SchemeNetworkClient {
       validBefore = now + paymentRequirements.maxTimeoutSeconds
     }
 
-    // Sign
     const transaction = new Transaction({
       nonce: BigInt(nonce),
       value: value,
       receiver: new Address(receiver),
-      sender: senderAddress, // self
+      sender: senderAddress,
       gasLimit: gasLimit,
       gasPrice: BigInt(gasPrice),
       data: new TransactionPayload(dataString),
       chainID: chainRef,
       version: 2,
     })
-
-    if (relayer) {
-      // Future work: set relayer semantics if supported by SDK transaction object
-    }
 
     const signature = await this.signer.signTransaction(transaction)
 

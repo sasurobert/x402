@@ -4,26 +4,21 @@ import { MultiversXSigner } from '../../signer'
 import { ExactMultiversXScheme } from './scheme'
 
 /**
- * Configuration options for registering MultiversX schemes to an x402Client
+ * Configuration for the MultiversX client scheme.
  */
 export interface MultiversXClientConfig {
-  /**
-   * The MultiversX signer instance
-   */
+  /** The signer instance to use for creating payloads */
   signer: MultiversXSigner
-  /**
-   * Optional specific networks to register
-   * If not provided, registers wildcard support (multiversx:*)
-   */
+  /** Optional list of networks to register against. Defaults to 'multiversx:*' */
   networks?: Network[]
 }
 
 /**
- * Registers MultiversX exact payment schemes to an x402Client instance.
+ * Registers the Exact MultiversX client scheme with the x402 client.
  *
- * @param client - The x402Client instance to register schemes to
- * @param config - Configuration for MultiversX client registration
- * @returns The client instance for chaining
+ * @param client - The x402 client instance
+ * @param config - The configuration for the MultiversX scheme
+ * @returns The modified client instance
  */
 export function registerExactMultiversXClientScheme(
   client: x402Client,
@@ -31,14 +26,11 @@ export function registerExactMultiversXClientScheme(
 ): x402Client {
   const scheme = new ExactMultiversXScheme(config.signer)
 
-  // Register scheme
   if (config.networks && config.networks.length > 0) {
-    // Register specific networks
     config.networks.forEach((network) => {
       client.register(network, scheme)
     })
   } else {
-    // Register wildcard for all MultiversX chains
     client.register('multiversx:*', scheme)
   }
 

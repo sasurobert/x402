@@ -4,7 +4,18 @@ import { PaymentRequirements, PaymentPayload } from '@x402/core/types'
 import { ExactMultiversXPayload } from '../src/types'
 import { Address } from '@multiversx/sdk-core'
 
-const alice = 'erd1qy9evls968sh2lg89f4yfq9jfsy68xsywv3sh42rg7496sk99cqsyat6wa'
+const mockProvider = {
+  simulateTransaction: vi.fn(),
+  sendTransaction: vi.fn(),
+  getTransactionStatus: vi.fn(),
+  awaitTransactionCompleted: vi.fn(),
+}
+
+vi.mock('@multiversx/sdk-network-providers', () => ({
+  ApiNetworkProvider: vi.fn().mockImplementation(() => mockProvider),
+}))
+
+const alice = 'erd1qyu5wthldzr8wx5c9ucg8kjagg0jfs53s8nr3zpz3hypefsdd8ssycr6th'
 const bob = 'erd1spyavw0956vq68xj8y4tenjpq2wd5a9p2c6j8gsz7ztyrnpxrruqzu66jx'
 
 const mockResource: PaymentPayload['resource'] = {
@@ -17,12 +28,15 @@ describe('ExactMultiversXFacilitator', () => {
   let facilitator: ExactMultiversXFacilitator
 
   beforeEach(() => {
+    vi.clearAllMocks()
     facilitator = new ExactMultiversXFacilitator('https://mock-api.com')
-    global.fetch = vi.fn()
   })
 
   it('should verify a valid EGLD payload', async () => {
     vi.spyOn(facilitator as any, 'verifySignature').mockResolvedValue({ isValid: true })
+    mockProvider.simulateTransaction.mockResolvedValue({
+      status: 'success',
+    })
 
     const payload: ExactMultiversXPayload = {
       nonce: 10,
@@ -55,17 +69,9 @@ describe('ExactMultiversXFacilitator', () => {
       payload: payload as any,
     }
 
-      ; (global.fetch as any).mockResolvedValue({
-        ok: true,
-        headers: { get: () => 'application/json' },
-        json: async () => ({
-          data: { result: { status: 'success', hash: 'tx-hash' } },
-          code: 'successful',
-        }),
-      })
-
     const result = await facilitator.verify(fullPayload, req)
-    expect(result.isValid).toBe(true)
+    expect(result.isValid, result.invalidReason).toBe(true)
+    expect(mockProvider.simulateTransaction).toHaveBeenCalled()
   })
 
   it('should fail if expired', async () => {
@@ -145,6 +151,7 @@ describe('ExactMultiversXFacilitator', () => {
       gasLimit: 50000,
       chainID: 'D',
       version: 2,
+      signature: 'sig',
     }
     const req: PaymentRequirements = {
       scheme: 'exact',
@@ -163,23 +170,21 @@ describe('ExactMultiversXFacilitator', () => {
       payload: payload as any,
     }
 
-      ; (global.fetch as any).mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: { txHash: 'tx-123' } }),
-      })
-
-      ; (global.fetch as any).mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: { status: 'success' } }),
-      })
+    mockProvider.sendTransaction.mockResolvedValue('tx-123')
+    mockProvider.awaitTransactionCompleted.mockResolvedValue({})
 
     const result = await facilitator.settle(fullPayload, req)
-    expect(result.success).toBe(true)
+    expect(result.success, result.errorReason).toBe(true)
     expect(result.transaction).toBe('tx-123')
+    expect(mockProvider.sendTransaction).toHaveBeenCalled()
+    expect(mockProvider.awaitTransactionCompleted).toHaveBeenCalledWith('tx-123')
   })
 
   it('should verify a valid ESDT payload', async () => {
     vi.spyOn(facilitator as any, 'verifySignature').mockResolvedValue({ isValid: true })
+    mockProvider.simulateTransaction.mockResolvedValue({
+      status: 'success',
+    })
 
     const asset = 'TEST-123456'
     const amount = '1000'
@@ -219,14 +224,7 @@ describe('ExactMultiversXFacilitator', () => {
       payload: payload as any,
     }
 
-      ; (global.fetch as any).mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: { result: { status: 'success' } },
-        }),
-      })
-
     const result = await facilitator.verify(fullPayload, req)
-    expect(result.isValid).toBe(true)
+    expect(result.isValid, result.invalidReason).toBe(true)
   })
 })

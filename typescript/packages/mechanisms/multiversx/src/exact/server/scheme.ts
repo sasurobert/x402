@@ -1,4 +1,4 @@
-import { PaymentRequirements, Price, Network, AssetAmount } from '@x402/core/types'
+import { PaymentRequirements, Price, Network, AssetAmount, MoneyParser } from '@x402/core/types'
 import { SchemeNetworkServer } from '@x402/core/types/mechanisms'
 import {
   MULTIVERSX_GAS_LIMIT_EGLD,
@@ -11,6 +11,11 @@ import {
  * MultiversX Server implementation for the Exact payment scheme.
  */
 export class ExactMultiversXServer implements SchemeNetworkServer {
+  /**
+   * Internal list of custom money parsers.
+   */
+  private moneyParsers: MoneyParser[] = []
+
   /**
    * The scheme identifier for this server.
    *
@@ -30,6 +35,17 @@ export class ExactMultiversXServer implements SchemeNetworkServer {
   }
 
   /**
+   * Registers a custom money parser for specialized price formats.
+   *
+   * @param parser - The money parser function
+   * @returns The server instance for chaining
+   */
+  registerMoneyParser(parser: MoneyParser): this {
+    this.moneyParsers.push(parser)
+    return this
+  }
+
+  /**
    * Gets extra configuration for a specific network.
    *
    * @param _network - The network identifier
@@ -42,34 +58,45 @@ export class ExactMultiversXServer implements SchemeNetworkServer {
   /**
    * Parses various price formats into atomic units for MultiversX.
    *
-   * @param price - The price to parse (string or object)
-   * @param _network - The network context
+   * @param price - The price to parse (string, number, or object)
+   * @param network - The network context
    * @returns The parsed asset and amount in atomic units
    */
-  async parsePrice(price: Price, _network: Network): Promise<AssetAmount> {
-    let amount = '0'
-    let asset = 'EGLD'
-
+  async parsePrice(price: Price, network: Network): Promise<AssetAmount> {
     if (typeof price === 'object' && price !== null) {
-      const p = price as Record<string, unknown>
-      amount = typeof p.amount === 'string' ? p.amount : '0'
-      asset = typeof p.asset === 'string' ? p.asset : 'EGLD'
-    } else if (typeof price === 'string') {
-      const cleanPrice = price.replace(/^\$/, '').trim()
-      const numericValue = parseFloat(cleanPrice)
+      if ('asset' in price && 'amount' in price) {
+        const aa = price as AssetAmount
+        if (!aa.asset) {
+          throw new Error('asset is required')
+        }
+        return { asset: aa.asset, amount: aa.amount }
+      }
 
-      if (!isNaN(numericValue)) {
-        const egldDecimals = 18
-        const [intPart, decPart = ''] = cleanPrice.split('.')
-        const paddedDec = decPart.padEnd(egldDecimals, '0').slice(0, egldDecimals)
-        amount = intPart + paddedDec
-        amount = amount.replace(/^0+/, '') || '0'
-      } else {
-        amount = cleanPrice
+      const p = price as Record<string, unknown>
+      const amount = typeof p.amount === 'string' ? p.amount : '0'
+      const asset = typeof p.asset === 'string' ? p.asset : ''
+
+      if (!asset) {
+        throw new Error('asset is required in price map')
+      }
+
+      return { asset, amount }
+    }
+
+    const decimalAmount = this.parseMoneyToDecimal(price)
+
+    for (const parser of this.moneyParsers) {
+      try {
+        const result = await parser(decimalAmount, network)
+        if (result) {
+          return result
+        }
+      } catch {
+        continue
       }
     }
 
-    return { asset, amount }
+    return this.defaultMoneyConversion(decimalAmount)
   }
 
   /**
@@ -154,6 +181,66 @@ export class ExactMultiversXServer implements SchemeNetworkServer {
       if (!/^[A-Z0-9]{3,8}-[0-9a-fA-F]{6}$/.test(requirements.asset)) {
         throw new Error(`invalid asset TokenID: ${requirements.asset}`)
       }
+    }
+  }
+
+  /**
+   * Internal helper to parse strings and numbers into a decimal float.
+   *
+   * @param price - The input price
+   * @returns The parsed numeric value
+   * @throws Error if the price format is unsupported
+   */
+  private parseMoneyToDecimal(price: Price): number {
+    if (typeof price === 'number') {
+      return price
+    }
+
+    if (typeof price === 'string') {
+      let cleanPrice = price.trim()
+      cleanPrice = cleanPrice.replace(/^\$/, '')
+      cleanPrice = cleanPrice.replace(/ USD$/, '')
+      cleanPrice = cleanPrice.replace(/ USDC$/, '')
+      cleanPrice = cleanPrice.trim()
+
+      const amount = parseFloat(cleanPrice)
+      if (isNaN(amount)) {
+        throw new Error(`failed to parse price string '${price}'`)
+      }
+      return amount
+    }
+
+    throw new Error(`unsupported price type: ${typeof price}`)
+  }
+
+  /**
+   * Internal helper to convert a decimal amount to atomic EGLD units.
+   *
+   * @param amount - The decimal amount (e.g., 1.5)
+   * @returns AssetAmount with EGLD and 18-decimal padded string
+   */
+  private defaultMoneyConversion(amount: number): AssetAmount {
+    const decimals = 18
+    const cleanAmount = amount.toString()
+
+    let intPart: string
+    let decPart: string
+
+    if (cleanAmount.includes('.')) {
+      const parts = cleanAmount.split('.')
+      intPart = parts[0]
+      decPart = parts[1].padEnd(decimals, '0').slice(0, decimals)
+    } else {
+      intPart = cleanAmount
+      decPart = '0'.repeat(decimals)
+    }
+
+    let finalAmount = (intPart + decPart).replace(/^0+/, '')
+    if (finalAmount === '') finalAmount = '0'
+
+    return {
+      asset: 'EGLD',
+      amount: finalAmount,
     }
   }
 }

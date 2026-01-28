@@ -9,6 +9,17 @@ import { SchemeNetworkFacilitator } from '@x402/core/types/mechanisms'
 import { ExactMultiversXPayload } from '../../types'
 import { MultiversXSigner } from '../../signer'
 import { Transaction, Address, TransactionPayload } from '@multiversx/sdk-core'
+import { ApiNetworkProvider } from '@multiversx/sdk-network-providers'
+import {
+  CHAIN_ID_DEVNET,
+  CHAIN_ID_MAINNET,
+  CHAIN_ID_TESTNET,
+  MULTIVERSX_API_URL_DEVNET,
+  MULTIVERSX_API_URL_MAINNET,
+  MULTIVERSX_API_URL_TESTNET,
+  MULTIVERSX_METHOD_MULTI_TRANSFER,
+  MULTIVERSX_NATIVE_TOKEN,
+} from '../../constants'
 
 /**
  * MultiversX Facilitator implementation for the Exact payment scheme.
@@ -22,7 +33,7 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
    * @param signerAddress - Optional address of the signer
    */
   constructor(
-    private apiUrl: string = 'https://devnet-api.multiversx.com',
+    private apiUrl: string = MULTIVERSX_API_URL_DEVNET,
     private signer?: MultiversXSigner,
     private signerAddress?: string,
   ) { }
@@ -103,9 +114,9 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
 
     const expectedReceiver = requirements.payTo
     const expectedAmount = requirements.amount
-    const asset = requirements.asset || 'EGLD'
+    const asset = requirements.asset || MULTIVERSX_NATIVE_TOKEN
 
-    if (asset !== 'EGLD') {
+    if (asset !== MULTIVERSX_NATIVE_TOKEN) {
       if (relayedPayload.receiver !== relayedPayload.sender) {
         return {
           isValid: false,
@@ -114,12 +125,12 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
       }
 
       const parts = (relayedPayload.data || '').split('@')
-      if (parts.length < 6 || parts[0] !== 'MultiESDTNFTTransfer') {
+      if (parts.length < 6 || parts[0] !== MULTIVERSX_METHOD_MULTI_TRANSFER) {
         return { isValid: false, invalidReason: 'Invalid ESDT transfer data format' }
       }
 
       const destHex = parts[1]
-      const destAddr = new Address(expectedReceiver)
+      const destAddr = Address.newFromBech32(expectedReceiver)
       if (destHex !== destAddr.hex()) {
         return {
           isValid: false,
@@ -168,7 +179,9 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
       return signatureValid
     }
 
-    return this.verifyViaSimulation(relayedPayload)
+    const apiUrl = this.resolveApiUrl(requirements.network)
+    const provider = new ApiNetworkProvider(apiUrl)
+    return this.verifyViaSimulation(relayedPayload, provider)
   }
 
   /**
@@ -185,46 +198,34 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
     const relayedPayload = payload.payload as unknown as ExactMultiversXPayload
     const network = requirements.network as Network
     const payer = relayedPayload.sender
-    let relayerSig = relayedPayload.relayerSignature
+    const apiUrl = this.resolveApiUrl(network)
+    const provider = new ApiNetworkProvider(apiUrl)
 
     try {
-      const txSendBody = {
-        nonce: relayedPayload.nonce,
+      const transaction = new Transaction({
+        nonce: BigInt(relayedPayload.nonce),
         value: relayedPayload.value,
-        receiver: relayedPayload.receiver,
-        sender: relayedPayload.sender,
-        gasPrice: relayedPayload.gasPrice,
+        receiver: Address.newFromBech32(relayedPayload.receiver),
+        sender: Address.newFromBech32(relayedPayload.sender),
+        gasPrice: BigInt(relayedPayload.gasPrice),
         gasLimit: relayedPayload.gasLimit,
-        data: Buffer.from(relayedPayload.data || '').toString('base64'),
-        signature: relayedPayload.signature,
+        data: new TransactionPayload(relayedPayload.data),
         chainID: relayedPayload.chainID,
         version: relayedPayload.version,
-        relayer: relayedPayload.relayer,
-        relayerSignature: relayerSig,
-      }
-
-      const response = await fetch(`${this.apiUrl}/transaction/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(txSendBody),
+        options: relayedPayload.options,
       })
 
-      if (!response.ok) {
-        return {
-          success: false,
-          errorReason: `Broadcast failed: ${response.statusText}`,
-          transaction: '',
-          network,
-          payer,
+      transaction.applySignature(Buffer.from(relayedPayload.signature || '', 'hex'))
+
+      if (relayedPayload.relayer) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ; (transaction as any).relayer = Address.newFromBech32(relayedPayload.relayer)
+        if (relayedPayload.relayerSignature) {
+          transaction.applySignature(Buffer.from(relayedPayload.relayerSignature, 'hex'))
         }
       }
 
-      const txResult = await response.json()
-      if (txResult.error) {
-        return { success: false, errorReason: txResult.error, transaction: '', network, payer }
-      }
-
-      const txHash = txResult.data?.txHash
+      const txHash = await provider.sendTransaction(transaction)
 
       if (!txHash) {
         return {
@@ -237,7 +238,7 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
       }
 
       try {
-        await this.waitForTx(txHash)
+        await this.waitForTx(txHash, provider)
       } catch (waitError: unknown) {
         const err = waitError as Error
         return {
@@ -265,74 +266,59 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
    * Performs an on-chain simulation of the transaction to verify its validity.
    *
    * @param payload - The payload to simulate
+   * @param provider - The MultiversX API provider to use for simulations
    * @returns A verification response based on simulation results
    */
-  private async verifyViaSimulation(payload: ExactMultiversXPayload): Promise<VerifyResponse> {
+  private async verifyViaSimulation(
+    payload: ExactMultiversXPayload,
+    provider: ApiNetworkProvider,
+  ): Promise<VerifyResponse> {
     try {
-      let relayerSig = payload.relayerSignature
-      const relayerAddr = payload.relayer
-
-      if (this.signer && this.signerAddress && relayerAddr === this.signerAddress && !relayerSig) {
-        const txToSign = new Transaction({
-          nonce: BigInt(payload.nonce),
-          value: payload.value,
-          receiver: new Address(payload.receiver),
-          sender: new Address(payload.sender),
-          gasLimit: payload.gasLimit,
-          gasPrice: BigInt(payload.gasPrice),
-          data: new TransactionPayload(payload.data),
-          chainID: payload.chainID,
-          version: payload.version,
-          options: payload.options,
-        })
-
-        txToSign.applySignature(Buffer.from(payload.signature || '', 'hex'))
-
-        if (relayerAddr) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ; (txToSign as any).relayer = new Address(relayerAddr)
-        }
-
-        relayerSig = await this.signer.signTransaction(txToSign)
-      }
-
-      const simulationBody = {
-        nonce: payload.nonce,
+      const transaction = new Transaction({
+        nonce: BigInt(payload.nonce),
         value: payload.value,
-        receiver: payload.receiver,
-        sender: payload.sender,
-        gasPrice: payload.gasPrice,
+        receiver: Address.newFromBech32(payload.receiver),
+        sender: Address.newFromBech32(payload.sender),
         gasLimit: payload.gasLimit,
-        data: Buffer.from(payload.data || '').toString('base64'),
+        gasPrice: BigInt(payload.gasPrice),
+        data: new TransactionPayload(payload.data),
         chainID: payload.chainID,
         version: payload.version,
-        signature: payload.signature,
-        relayer: payload.relayer,
-        relayerSignature: relayerSig,
-      }
-
-      const response = await fetch(`${this.apiUrl}/transaction/simulate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(simulationBody),
+        options: payload.options,
       })
 
-      if (!response.ok) {
-        return { isValid: false, invalidReason: `Simulation API error: ${response.status}` }
+      transaction.applySignature(Buffer.from(payload.signature || '', 'hex'))
+
+      const relayerAddr = payload.relayer
+      let relayerSig = payload.relayerSignature
+
+      if (this.signer && this.signerAddress && relayerAddr === this.signerAddress && !relayerSig) {
+        if (relayerAddr) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ; (transaction as any).relayer = Address.newFromBech32(relayerAddr)
+        }
+        relayerSig = await this.signer.signTransaction(transaction)
       }
 
-      const simResult = await response.json()
+      if (relayerAddr) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ; (transaction as any).relayer = Address.newFromBech32(relayerAddr)
+        if (relayerSig) {
+          transaction.applySignature(Buffer.from(relayerSig, 'hex'))
+        }
+      }
+
+      const simResult = await provider.simulateTransaction(transaction)
+
       if (simResult.error) {
         return { isValid: false, invalidReason: `Simulation error: ${simResult.error}` }
       }
-      if (
-        simResult.data?.result?.status !== 'success' &&
-        simResult.data?.result?.status !== 'successful'
-      ) {
-        const failReason = simResult.data?.result?.returnMessage || simResult.data?.result?.status
+
+      const status = simResult.status
+      if (status !== 'success' && status !== 'successful') {
         return {
           isValid: false,
-          invalidReason: `Simulation failed: ${failReason}`,
+          invalidReason: `Simulation failed: ${simResult.returnMessage || status}`,
         }
       }
 
@@ -358,8 +344,8 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
       const tx = new Transaction({
         nonce: BigInt(payload.nonce),
         value: payload.value,
-        receiver: new Address(payload.receiver),
-        sender: new Address(payload.sender),
+        receiver: Address.newFromBech32(payload.receiver),
+        sender: Address.newFromBech32(payload.sender),
         gasLimit: payload.gasLimit,
         gasPrice: BigInt(payload.gasPrice),
         data: new TransactionPayload(payload.data || ''),
@@ -374,7 +360,7 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
 
       const ed = await import('@noble/ed25519')
 
-      const senderAddress = new Address(payload.sender)
+      const senderAddress = Address.newFromBech32(payload.sender)
       const publicKeyBytes = senderAddress.getPublicKey()
       const signatureBytes = Buffer.from(payload.signature, 'hex')
 
@@ -392,43 +378,39 @@ export class ExactMultiversXFacilitator implements SchemeNetworkFacilitator {
   }
 
   /**
-   * Status check helper that polls the MultiversX API until a transaction is finalized or fails.
+   * Status check helper that waits until a transaction is finalized or fails.
    *
-   * @param txHash - The hash of the transaction to poll for
-   * @throws Error if the transaction fails or timeouts
+   * @param txHash - The hash of the transaction to wait for
+   * @param provider - The MultiversX API provider to use for waiting
+   * @throws Error if the transaction fails
    */
-  private async waitForTx(txHash: string): Promise<void> {
-    const timeoutMs = 120000
-    const pollIntervalMs = 2000
-    const startTime = Date.now()
-
-    while (Date.now() - startTime < timeoutMs) {
-      try {
-        const response = await fetch(`${this.apiUrl}/transaction/${txHash}/status`)
-        if (!response.ok) {
-          await new Promise((r) => setTimeout(r, pollIntervalMs))
-          continue
-        }
-
-        const res = await response.json()
-        const status = res.data?.status || res.status
-
-        if (['success', 'successful', 'executed'].includes(status)) {
-          return
-        }
-        if (['fail', 'failed', 'invalid'].includes(status)) {
-          let errorMsg = `Transaction status: ${status}`
-          try {
-            await fetch(`${this.apiUrl}/transaction/${txHash}`)
-          } catch { }
-          throw new Error(errorMsg)
-        }
-        await new Promise((r) => setTimeout(r, pollIntervalMs))
-      } catch (e) {
-        if (e instanceof Error && e.message.startsWith('Transaction status')) throw e
-        await new Promise((r) => setTimeout(r, pollIntervalMs))
-      }
+  private async waitForTx(txHash: string, provider: ApiNetworkProvider): Promise<void> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (provider as any).awaitTransactionCompleted(txHash)
+    } catch (e: unknown) {
+      const err = e as Error
+      throw new Error(`Transaction failed or wait timed out: ${err.message}`)
     }
-    throw new Error(`Timeout waiting for tx ${txHash}`)
+  }
+
+  /**
+   * Resolves the MultiversX API URL for a given network identifier.
+   *
+   * @param network - The network identifier (e.g., 'multiversx:1', 'multiversx:D')
+   * @returns The resolved API URL
+   */
+  private resolveApiUrl(network: string): string {
+    const chainId = network.split(':')[1]
+    switch (chainId) {
+      case CHAIN_ID_MAINNET:
+        return MULTIVERSX_API_URL_MAINNET
+      case CHAIN_ID_DEVNET:
+        return MULTIVERSX_API_URL_DEVNET
+      case CHAIN_ID_TESTNET:
+        return MULTIVERSX_API_URL_TESTNET
+      default:
+        return this.apiUrl
+    }
   }
 }

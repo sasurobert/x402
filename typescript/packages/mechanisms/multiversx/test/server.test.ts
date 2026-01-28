@@ -83,4 +83,70 @@ describe('ExactMultiversXServer', () => {
             expect(enhanced.extra?.assetTransferMethod).toBe('direct')
         })
     })
+
+    describe('parsePrice', () => {
+        const network = 'multiversx:D' as any
+
+        it('should handle AssetAmount objects', async () => {
+            const price = { asset: 'EGLD', amount: '100' }
+            const result = await server.parsePrice(price, network)
+            expect(result).toEqual(price)
+        })
+
+        it('should handle map objects with extra fields', async () => {
+            const price = { asset: 'TEST', amount: '500', extra: { foo: 'bar' } }
+            const result = await server.parsePrice(price as any, network)
+            expect(result).toEqual({ asset: 'TEST', amount: '500' })
+        })
+
+        it('should throw if asset is missing in object', async () => {
+            const price = { amount: '100' }
+            await expect(server.parsePrice(price as any, network)).rejects.toThrow('asset is required in price map')
+        })
+
+        it('should handle numeric input', async () => {
+            const result = await server.parsePrice(1.5, network)
+            expect(result.asset).toBe('EGLD')
+            expect(result.amount).toBe('1500000000000000000')
+        })
+
+        it('should handle string with $ prefix', async () => {
+            const result = await server.parsePrice('$2.5', network)
+            expect(result.asset).toBe('EGLD')
+            expect(result.amount).toBe('2500000000000000000')
+        })
+
+        it('should handle string with USD suffix', async () => {
+            const result = await server.parsePrice('3.14 USD', network)
+            expect(result.asset).toBe('EGLD')
+            expect(result.amount).toBe('3140000000000000000')
+        })
+
+        it('should handle string with USDC suffix', async () => {
+            const result = await server.parsePrice('10 USDC', network)
+            expect(result.asset).toBe('EGLD')
+            expect(result.amount).toBe('10000000000000000000')
+        })
+
+        it('should handle custom money parsers', async () => {
+            server.registerMoneyParser(async (amount, net) => {
+                if (amount === 42 && net === network) {
+                    return { asset: 'ANSWER', amount: 'LIFE' }
+                }
+                return null
+            })
+
+            const result = await server.parsePrice(42, network)
+            expect(result).toEqual({ asset: 'ANSWER', amount: 'LIFE' })
+
+            const otherResult = await server.parsePrice(10, network)
+            expect(otherResult.asset).toBe('EGLD')
+        })
+
+        it('should handle raw strings as raw amounts', async () => {
+            const result = await server.parsePrice('12345', network)
+            expect(result.asset).toBe('EGLD')
+            expect(result.amount).toBe('12345000000000000000000')
+        })
+    })
 })
